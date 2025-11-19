@@ -18,10 +18,7 @@ function setupAllSheets() {
 
   Logger.log('🚀 シートのセットアップを開始します...');
 
-  // 既存のデフォルトシート（Sheet1など）を削除
-  deleteDefaultSheets(ss);
-
-  // 各シートを作成
+  // 各シートを作成（先に作成してからデフォルトシートを削除）
   createTournamentsSheet(ss);
   createTournamentConfigSheet(ss);
   createParticipantsSheet(ss);
@@ -34,6 +31,9 @@ function setupAllSheets() {
   createTournamentBracketSheet(ss);
   createPlayerStatsSheet(ss);
   createPaymentSummarySheet(ss);
+
+  // 既存のデフォルトシート（Sheet1など）を削除
+  deleteDefaultSheets(ss);
 
   Logger.log('✅ すべてのシートのセットアップが完了しました！');
   SpreadsheetApp.getUi().alert('✅ セットアップ完了！\n\n12個のシートが作成されました。');
