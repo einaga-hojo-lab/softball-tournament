@@ -5,9 +5,9 @@
  * 1. setup-sheets.js を先に実行してシートを作成
  * 2. このスクリプトをApps Scriptエディタに追加
  * 3. addSampleData() 関数を実行
+ *
+ * 注意: SPREADSHEET_ID は setup-sheets.js で定義されています
  */
-
-const SPREADSHEET_ID = '1hE4zyNoE4kesA7Ysb5eV9U-RI8nmw4Uwj-A3WbThJPM';
 
 /**
  * サンプルデータを追加
