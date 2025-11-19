@@ -1,25 +1,32 @@
 import { GoogleSpreadsheet } from 'google-spreadsheet';
+import { JWT } from 'google-auth-library';
 import { Game, Team, Player, Tournament, LeagueStanding, PlayerStats } from './types';
 
 // Google Sheetsドキュメントの取得
 export async function getSpreadsheet() {
-  const doc = new GoogleSpreadsheet(
-    process.env.GOOGLE_SHEET_ID!,
-    {
-      apiKey: process.env.GOOGLE_API_KEY,
-    }
-  );
-
   // サービスアカウント認証を使用する場合
   if (process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
-    await doc.useServiceAccountAuth({
-      client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+    const serviceAccountAuth = new JWT({
+      email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+      key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+      scopes: ['https://www.googleapis.com/auth/spreadsheets'],
     });
+
+    const doc = new GoogleSpreadsheet(process.env.GOOGLE_SHEET_ID!, serviceAccountAuth);
+    await doc.loadInfo();
+    return doc;
   }
 
-  await doc.loadInfo();
-  return doc;
+  // API Keyを使用する場合
+  if (process.env.GOOGLE_API_KEY) {
+    const doc = new GoogleSpreadsheet(process.env.GOOGLE_SHEET_ID!, {
+      apiKey: process.env.GOOGLE_API_KEY,
+    });
+    await doc.loadInfo();
+    return doc;
+  }
+
+  throw new Error('Google Sheets authentication credentials not found');
 }
 
 // 現在アクティブな大会を取得
