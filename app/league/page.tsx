@@ -100,8 +100,8 @@ export default function LeaguePage() {
       <main className="min-h-screen bg-gray-50">
         <div className="container mx-auto px-4 py-8">
           <div className="mb-6">
-            <Link href="/schedule" className="text-primary hover:underline">
-              ← スケジュールに戻る
+            <Link href={backLink} className="text-primary hover:underline">
+              {backText}
             </Link>
           </div>
           <h1 className="text-4xl font-bold mb-8 text-primary">
