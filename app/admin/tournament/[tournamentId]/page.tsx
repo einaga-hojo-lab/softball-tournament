@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Team } from "@/lib/types";
+import { Team, Game } from "@/lib/types";
 
 interface DashboardStats {
   tournament: any;
@@ -36,6 +36,26 @@ export default function TournamentDashboardPage() {
     captainEmail: "",
     memberCount: 0,
     notes: "",
+  });
+
+  // 試合管理関連のステート
+  const [games, setGames] = useState<Game[]>([]);
+  const [showGameForm, setShowGameForm] = useState(false);
+  const [editingGame, setEditingGame] = useState<Game | null>(null);
+  const [gameFormData, setGameFormData] = useState({
+    gameType: "league" as "league" | "tournament",
+    block: "",
+    round: "",
+    teamHomeId: "",
+    teamAwayId: "",
+    scoreHome: 0,
+    scoreAway: 0,
+    status: "scheduled" as "scheduled" | "in_progress" | "completed" | "cancelled" | "postponed",
+    scheduledDate: "",
+    scheduledTime: "",
+    groundNumber: 1,
+    referee: "",
+    recorder: "",
   });
 
   useEffect(() => {
@@ -72,6 +92,7 @@ export default function TournamentDashboardPage() {
 
         setStats(dashboardStats);
         setTeams(teams);
+        setGames(games);
         setLoading(false);
       } catch (err) {
         setError(err instanceof Error ? err.message : '不明なエラー');
@@ -182,6 +203,134 @@ export default function TournamentDashboardPage() {
       notes: "",
     });
     setEditingTeam(null);
+  }
+
+  // 試合管理関数
+  async function handleCreateGame(e: React.FormEvent) {
+    e.preventDefault();
+    try {
+      const res = await fetch('/api/admin/games', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tournamentId, ...gameFormData }),
+      });
+
+      if (!res.ok) throw new Error('試合の作成に失敗しました');
+
+      const newGame = await res.json();
+      setGames([...games, newGame]);
+      setShowGameForm(false);
+      resetGameForm();
+
+      // 統計を更新
+      if (stats) {
+        setStats({
+          ...stats,
+          gamesTotal: stats.gamesTotal + 1,
+          gamesScheduled: stats.gamesScheduled + 1,
+          leagueGames: newGame.gameType === 'league' ? stats.leagueGames + 1 : stats.leagueGames,
+          tournamentGames: newGame.gameType === 'tournament' ? stats.tournamentGames + 1 : stats.tournamentGames,
+        });
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '試合の作成に失敗しました');
+    }
+  }
+
+  async function handleUpdateGame(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingGame) return;
+
+    try {
+      const res = await fetch(`/api/admin/games/${editingGame.gameId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tournamentId, ...gameFormData }),
+      });
+
+      if (!res.ok) throw new Error('試合の更新に失敗しました');
+
+      setGames(games.map(g =>
+        g.gameId === editingGame.gameId
+          ? { ...g, ...gameFormData }
+          : g
+      ));
+      setEditingGame(null);
+      setShowGameForm(false);
+      resetGameForm();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '試合の更新に失敗しました');
+    }
+  }
+
+  async function handleDeleteGame(gameId: string) {
+    if (!confirm('本当にこの試合を削除しますか？\n\nこの操作は取り消せません。')) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/admin/games/${gameId}?tournamentId=${tournamentId}`, {
+        method: 'DELETE',
+      });
+
+      if (!res.ok) throw new Error('試合の削除に失敗しました');
+
+      const deletedGame = games.find(g => g.gameId === gameId);
+      setGames(games.filter(g => g.gameId !== gameId));
+
+      // 統計を更新
+      if (stats && deletedGame) {
+        setStats({
+          ...stats,
+          gamesTotal: stats.gamesTotal - 1,
+          gamesScheduled: deletedGame.status === 'scheduled' ? stats.gamesScheduled - 1 : stats.gamesScheduled,
+          gamesCompleted: deletedGame.status === 'completed' ? stats.gamesCompleted - 1 : stats.gamesCompleted,
+          leagueGames: deletedGame.gameType === 'league' ? stats.leagueGames - 1 : stats.leagueGames,
+          tournamentGames: deletedGame.gameType === 'tournament' ? stats.tournamentGames - 1 : stats.tournamentGames,
+        });
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '試合の削除に失敗しました');
+    }
+  }
+
+  function openEditGameForm(game: Game) {
+    setEditingGame(game);
+    setGameFormData({
+      gameType: game.gameType,
+      block: game.block || "",
+      round: game.round || "",
+      teamHomeId: game.teamHomeId,
+      teamAwayId: game.teamAwayId,
+      scoreHome: game.scoreHome,
+      scoreAway: game.scoreAway,
+      status: game.status,
+      scheduledDate: game.scheduledDate,
+      scheduledTime: game.scheduledTime,
+      groundNumber: game.groundNumber,
+      referee: game.referee || "",
+      recorder: game.recorder || "",
+    });
+    setShowGameForm(true);
+  }
+
+  function resetGameForm() {
+    setGameFormData({
+      gameType: "league" as "league" | "tournament",
+      block: "",
+      round: "",
+      teamHomeId: "",
+      teamAwayId: "",
+      scoreHome: 0,
+      scoreAway: 0,
+      status: "scheduled" as "scheduled" | "in_progress" | "completed" | "cancelled" | "postponed",
+      scheduledDate: "",
+      scheduledTime: "",
+      groundNumber: 1,
+      referee: "",
+      recorder: "",
+    });
+    setEditingGame(null);
   }
 
   if (loading) {
@@ -594,6 +743,262 @@ export default function TournamentDashboardPage() {
                             </button>
                             <button
                               onClick={() => handleDeleteTeam(team.teamId, team.teamName)}
+                              className="px-3 py-1 bg-red-500 text-white text-sm rounded hover:bg-red-600"
+                            >
+                              削除
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 試合管理セクション */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-2xl font-bold text-primary">試合スケジュール管理</h2>
+            <button
+              onClick={() => {
+                resetGameForm();
+                setShowGameForm(!showGameForm);
+              }}
+              className="px-4 py-2 bg-accent text-white rounded-lg hover:bg-opacity-90 transition-colors"
+            >
+              {showGameForm ? 'キャンセル' : '+ 新規試合追加'}
+            </button>
+          </div>
+
+          {/* 試合追加/編集フォーム */}
+          {showGameForm && (
+            <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+              <h3 className="text-xl font-bold mb-4 text-primary">
+                {editingGame ? '試合編集' : '新規試合追加'}
+              </h3>
+              <form onSubmit={editingGame ? handleUpdateGame : handleCreateGame} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      試合タイプ <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      required
+                      value={gameFormData.gameType}
+                      onChange={(e) => setGameFormData({ ...gameFormData, gameType: e.target.value as "league" | "tournament" })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                    >
+                      <option value="league">リーグ戦</option>
+                      <option value="tournament">トーナメント</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      ブロック/ラウンド
+                    </label>
+                    <input
+                      type="text"
+                      value={gameFormData.gameType === 'league' ? gameFormData.block : gameFormData.round}
+                      onChange={(e) => setGameFormData({
+                        ...gameFormData,
+                        ...(gameFormData.gameType === 'league' ? { block: e.target.value } : { round: e.target.value })
+                      })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                      placeholder={gameFormData.gameType === 'league' ? 'A, B, C...' : '準々決勝、準決勝...'}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      ホームチーム <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      required
+                      value={gameFormData.teamHomeId}
+                      onChange={(e) => setGameFormData({ ...gameFormData, teamHomeId: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                    >
+                      <option value="">選択してください</option>
+                      {teams.map(team => (
+                        <option key={team.teamId} value={team.teamId}>
+                          {team.teamName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      アウェイチーム <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      required
+                      value={gameFormData.teamAwayId}
+                      onChange={(e) => setGameFormData({ ...gameFormData, teamAwayId: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                    >
+                      <option value="">選択してください</option>
+                      {teams.map(team => (
+                        <option key={team.teamId} value={team.teamId}>
+                          {team.teamName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      試合日 <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={gameFormData.scheduledDate}
+                      onChange={(e) => setGameFormData({ ...gameFormData, scheduledDate: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      試合時刻 <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="time"
+                      required
+                      value={gameFormData.scheduledTime}
+                      onChange={(e) => setGameFormData({ ...gameFormData, scheduledTime: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      グラウンド番号
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={gameFormData.groundNumber}
+                      onChange={(e) => setGameFormData({ ...gameFormData, groundNumber: parseInt(e.target.value) || 1 })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      審判
+                    </label>
+                    <input
+                      type="text"
+                      value={gameFormData.referee}
+                      onChange={(e) => setGameFormData({ ...gameFormData, referee: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                      placeholder="審判名"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-4 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowGameForm(false);
+                      resetGameForm();
+                    }}
+                    className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                  >
+                    キャンセル
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-6 py-2 bg-accent text-white rounded-lg hover:bg-opacity-90"
+                  >
+                    {editingGame ? '更新' : '作成'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* 試合一覧 */}
+          <div className="bg-white rounded-lg shadow-md overflow-hidden">
+            <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
+              <h3 className="text-lg font-bold text-primary">登録試合一覧 ({games.length}試合)</h3>
+            </div>
+
+            {games.length === 0 ? (
+              <div className="p-8 text-center text-gray-600">
+                <p className="mb-4">試合が登録されていません</p>
+                <button
+                  onClick={() => setShowGameForm(true)}
+                  className="px-6 py-2 bg-accent text-white rounded-lg hover:bg-opacity-90"
+                >
+                  最初の試合を作成
+                </button>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-100">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">日時</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">試合</th>
+                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700">タイプ</th>
+                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700">ステータス</th>
+                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {games.sort((a, b) => `${a.scheduledDate} ${a.scheduledTime}`.localeCompare(`${b.scheduledDate} ${b.scheduledTime}`)).map((game) => (
+                      <tr key={game.gameId} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 text-sm">
+                          <div>{game.scheduledDate}</div>
+                          <div className="text-gray-500">{game.scheduledTime}</div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="font-medium">
+                            {teams.find(t => t.teamId === game.teamHomeId)?.teamName || game.teamHomeId}
+                            {' vs '}
+                            {teams.find(t => t.teamId === game.teamAwayId)?.teamName || game.teamAwayId}
+                          </div>
+                          {(game.block || game.round) && (
+                            <div className="text-xs text-gray-500">
+                              {game.gameType === 'league' ? `ブロック${game.block}` : game.round}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-center text-sm">
+                          <span className={`px-2 py-1 text-xs rounded ${
+                            game.gameType === 'league' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'
+                          }`}>
+                            {game.gameType === 'league' ? 'リーグ' : 'トーナメント'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-center text-sm">
+                          <span className={`px-2 py-1 text-xs rounded ${
+                            game.status === 'completed' ? 'bg-green-100 text-green-800' :
+                            game.status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
+                            'bg-gray-100 text-gray-800'
+                          }`}>
+                            {game.status === 'completed' ? '完了' :
+                             game.status === 'in_progress' ? '進行中' : '予定'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <div className="flex justify-center gap-2">
+                            <button
+                              onClick={() => openEditGameForm(game)}
+                              className="px-3 py-1 bg-blue-500 text-white text-sm rounded hover:bg-blue-600"
+                            >
+                              編集
+                            </button>
+                            <button
+                              onClick={() => handleDeleteGame(game.gameId)}
                               className="px-3 py-1 bg-red-500 text-white text-sm rounded hover:bg-red-600"
                             >
                               削除

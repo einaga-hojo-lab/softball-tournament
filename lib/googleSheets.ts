@@ -261,6 +261,179 @@ export async function getGames(tournamentId?: string): Promise<Game[]> {
   }
 }
 
+// 試合を作成
+export async function createGame(
+  tournamentId: string,
+  gameData: {
+    gameType: 'league' | 'tournament';
+    block?: string;
+    round?: string;
+    teamHomeId: string;
+    teamAwayId: string;
+    scoreHome?: number;
+    scoreAway?: number;
+    status?: string;
+    scheduledDate: string;
+    scheduledTime: string;
+    actualStartTime?: string;
+    actualEndTime?: string;
+    groundNumber?: number;
+    referee?: string;
+    recorder?: string;
+  }
+): Promise<Game> {
+  try {
+    const doc = await getSpreadsheet();
+    const sheet = doc.sheetsByTitle['Games'];
+    if (!sheet) {
+      throw new Error('Games sheet not found');
+    }
+
+    // 新しい試合IDを生成
+    const rows = await sheet.getRows();
+    const gameIds = rows
+      .filter(row => row.get('tournament_id') === tournamentId)
+      .map(row => {
+        const id = row.get('game_id');
+        const match = id?.match(/GAME(\d+)$/);
+        return match ? parseInt(match[1]) : 0;
+      });
+    const maxId = gameIds.length > 0 ? Math.max(...gameIds) : 0;
+    const newGameId = `GAME${String(maxId + 1).padStart(3, '0')}`;
+
+    // 新しい行を追加
+    await sheet.addRow({
+      tournament_id: tournamentId,
+      game_id: newGameId,
+      game_type: gameData.gameType,
+      block: gameData.block || '',
+      round: gameData.round || '',
+      team_home_id: gameData.teamHomeId,
+      team_away_id: gameData.teamAwayId,
+      score_home: gameData.scoreHome?.toString() || '0',
+      score_away: gameData.scoreAway?.toString() || '0',
+      status: gameData.status || 'scheduled',
+      scheduled_date: gameData.scheduledDate,
+      scheduled_time: gameData.scheduledTime,
+      actual_start_time: gameData.actualStartTime || '',
+      actual_end_time: gameData.actualEndTime || '',
+      ground_number: gameData.groundNumber?.toString() || '1',
+      referee: gameData.referee || '',
+      recorder: gameData.recorder || '',
+    });
+
+    return {
+      gameId: newGameId,
+      tournamentId,
+      gameType: gameData.gameType,
+      block: gameData.block,
+      round: gameData.round,
+      teamHomeId: gameData.teamHomeId,
+      teamAwayId: gameData.teamAwayId,
+      scoreHome: gameData.scoreHome || 0,
+      scoreAway: gameData.scoreAway || 0,
+      status: (gameData.status || 'scheduled') as 'scheduled' | 'in_progress' | 'completed' | 'cancelled' | 'postponed',
+      scheduledDate: gameData.scheduledDate,
+      scheduledTime: gameData.scheduledTime,
+      actualStartTime: gameData.actualStartTime,
+      actualEndTime: gameData.actualEndTime,
+      groundNumber: gameData.groundNumber || 1,
+      referee: gameData.referee || '',
+      recorder: gameData.recorder || '',
+    };
+  } catch (error) {
+    console.error('Error creating game:', error);
+    throw error;
+  }
+}
+
+// 試合を更新
+export async function updateGame(
+  tournamentId: string,
+  gameId: string,
+  gameData: {
+    gameType?: 'league' | 'tournament';
+    block?: string;
+    round?: string;
+    teamHomeId?: string;
+    teamAwayId?: string;
+    scoreHome?: number;
+    scoreAway?: number;
+    status?: string;
+    scheduledDate?: string;
+    scheduledTime?: string;
+    actualStartTime?: string;
+    actualEndTime?: string;
+    groundNumber?: number;
+    referee?: string;
+    recorder?: string;
+  }
+): Promise<void> {
+  try {
+    const doc = await getSpreadsheet();
+    const sheet = doc.sheetsByTitle['Games'];
+    if (!sheet) {
+      throw new Error('Games sheet not found');
+    }
+
+    const rows = await sheet.getRows();
+    const gameRow = rows.find(
+      row => row.get('tournament_id') === tournamentId && row.get('game_id') === gameId
+    );
+
+    if (!gameRow) {
+      throw new Error('Game not found');
+    }
+
+    // 更新
+    if (gameData.gameType !== undefined) gameRow.set('game_type', gameData.gameType);
+    if (gameData.block !== undefined) gameRow.set('block', gameData.block);
+    if (gameData.round !== undefined) gameRow.set('round', gameData.round);
+    if (gameData.teamHomeId !== undefined) gameRow.set('team_home_id', gameData.teamHomeId);
+    if (gameData.teamAwayId !== undefined) gameRow.set('team_away_id', gameData.teamAwayId);
+    if (gameData.scoreHome !== undefined) gameRow.set('score_home', gameData.scoreHome.toString());
+    if (gameData.scoreAway !== undefined) gameRow.set('score_away', gameData.scoreAway.toString());
+    if (gameData.status !== undefined) gameRow.set('status', gameData.status);
+    if (gameData.scheduledDate !== undefined) gameRow.set('scheduled_date', gameData.scheduledDate);
+    if (gameData.scheduledTime !== undefined) gameRow.set('scheduled_time', gameData.scheduledTime);
+    if (gameData.actualStartTime !== undefined) gameRow.set('actual_start_time', gameData.actualStartTime);
+    if (gameData.actualEndTime !== undefined) gameRow.set('actual_end_time', gameData.actualEndTime);
+    if (gameData.groundNumber !== undefined) gameRow.set('ground_number', gameData.groundNumber.toString());
+    if (gameData.referee !== undefined) gameRow.set('referee', gameData.referee);
+    if (gameData.recorder !== undefined) gameRow.set('recorder', gameData.recorder);
+
+    await gameRow.save();
+  } catch (error) {
+    console.error('Error updating game:', error);
+    throw error;
+  }
+}
+
+// 試合を削除
+export async function deleteGame(tournamentId: string, gameId: string): Promise<void> {
+  try {
+    const doc = await getSpreadsheet();
+    const sheet = doc.sheetsByTitle['Games'];
+    if (!sheet) {
+      throw new Error('Games sheet not found');
+    }
+
+    const rows = await sheet.getRows();
+    const gameRow = rows.find(
+      row => row.get('tournament_id') === tournamentId && row.get('game_id') === gameId
+    );
+
+    if (!gameRow) {
+      throw new Error('Game not found');
+    }
+
+    await gameRow.delete();
+  } catch (error) {
+    console.error('Error deleting game:', error);
+    throw error;
+  }
+}
+
 // チーム一覧を取得
 export async function getTeams(tournamentId?: string): Promise<Team[]> {
   try {
