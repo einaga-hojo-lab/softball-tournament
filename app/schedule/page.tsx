@@ -227,21 +227,21 @@ export default function SchedulePage() {
 
         {/* クイックリンク */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <Link href="/league">
+          <Link href={tournamentId ? `/league?tournamentId=${tournamentId}` : '/league'}>
             <div className="p-4 bg-white border rounded-lg hover:shadow-lg transition-shadow cursor-pointer">
               <h3 className="font-semibold text-lg mb-2">リーグ戦順位</h3>
               <p className="text-sm text-gray-600">各ブロックの順位を確認</p>
             </div>
           </Link>
 
-          <Link href="/games">
+          <Link href={tournamentId ? `/games?tournamentId=${tournamentId}` : '/games'}>
             <div className="p-4 bg-white border rounded-lg hover:shadow-lg transition-shadow cursor-pointer">
               <h3 className="font-semibold text-lg mb-2">試合結果</h3>
               <p className="text-sm text-gray-600">試合の詳細を確認</p>
             </div>
           </Link>
 
-          <Link href="/stats">
+          <Link href={tournamentId ? `/stats?tournamentId=${tournamentId}` : '/stats'}>
             <div className="p-4 bg-white border rounded-lg hover:shadow-lg transition-shadow cursor-pointer">
               <h3 className="font-semibold text-lg mb-2">個人成績</h3>
               <p className="text-sm text-gray-600">選手の成績を確認</p>

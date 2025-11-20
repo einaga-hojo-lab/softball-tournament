@@ -47,8 +47,8 @@ export default function LeaguePage() {
     fetchData();
   }, []);
 
-  const backLink = tournamentId ? `/admin/tournament/${tournamentId}` : '/schedule';
-  const backText = tournamentId ? '← ダッシュボードに戻る' : '← スケジュールに戻る';
+  const backLink = tournamentId ? `/admin/tournament/${tournamentId}` : '/';
+  const backText = tournamentId ? '← ダッシュボードに戻る' : '← ホームに戻る';
 
   if (loading) {
     return (
