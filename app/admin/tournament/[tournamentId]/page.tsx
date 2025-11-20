@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import { Team } from "@/lib/types";
 
 interface DashboardStats {
   tournament: any;
@@ -22,6 +23,20 @@ export default function TournamentDashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // チーム管理関連のステート
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [showTeamForm, setShowTeamForm] = useState(false);
+  const [editingTeam, setEditingTeam] = useState<Team | null>(null);
+  const [teamFormData, setTeamFormData] = useState({
+    teamName: "",
+    block: "",
+    combinedTeam: false,
+    captainName: "",
+    captainEmail: "",
+    memberCount: 0,
+    notes: "",
+  });
 
   useEffect(() => {
     async function fetchDashboardData() {
@@ -56,6 +71,7 @@ export default function TournamentDashboardPage() {
         };
 
         setStats(dashboardStats);
+        setTeams(teams);
         setLoading(false);
       } catch (err) {
         setError(err instanceof Error ? err.message : '不明なエラー');
@@ -65,6 +81,108 @@ export default function TournamentDashboardPage() {
 
     fetchDashboardData();
   }, [tournamentId]);
+
+  // チーム管理関数
+  async function handleCreateTeam(e: React.FormEvent) {
+    e.preventDefault();
+    try {
+      const res = await fetch('/api/admin/teams', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tournamentId, ...teamFormData }),
+      });
+
+      if (!res.ok) throw new Error('チームの作成に失敗しました');
+
+      const newTeam = await res.json();
+      setTeams([...teams, newTeam]);
+      setShowTeamForm(false);
+      resetTeamForm();
+
+      // 統計を更新
+      if (stats) {
+        setStats({ ...stats, teamsCount: stats.teamsCount + 1 });
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'チームの作成に失敗しました');
+    }
+  }
+
+  async function handleUpdateTeam(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingTeam) return;
+
+    try {
+      const res = await fetch(`/api/admin/teams/${editingTeam.teamId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tournamentId, ...teamFormData }),
+      });
+
+      if (!res.ok) throw new Error('チームの更新に失敗しました');
+
+      setTeams(teams.map(t =>
+        t.teamId === editingTeam.teamId
+          ? { ...t, ...teamFormData }
+          : t
+      ));
+      setEditingTeam(null);
+      setShowTeamForm(false);
+      resetTeamForm();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'チームの更新に失敗しました');
+    }
+  }
+
+  async function handleDeleteTeam(teamId: string, teamName: string) {
+    if (!confirm(`本当に「${teamName}」を削除しますか？\n\nこの操作は取り消せません。`)) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/admin/teams/${teamId}?tournamentId=${tournamentId}`, {
+        method: 'DELETE',
+      });
+
+      if (!res.ok) throw new Error('チームの削除に失敗しました');
+
+      setTeams(teams.filter(t => t.teamId !== teamId));
+
+      // 統計を更新
+      if (stats) {
+        setStats({ ...stats, teamsCount: stats.teamsCount - 1 });
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'チームの削除に失敗しました');
+    }
+  }
+
+  function openEditForm(team: Team) {
+    setEditingTeam(team);
+    setTeamFormData({
+      teamName: team.teamName,
+      block: team.block || "",
+      combinedTeam: team.combinedTeam || false,
+      captainName: team.captainName || "",
+      captainEmail: team.captainEmail || "",
+      memberCount: team.memberCount || 0,
+      notes: team.notes || "",
+    });
+    setShowTeamForm(true);
+  }
+
+  function resetTeamForm() {
+    setTeamFormData({
+      teamName: "",
+      block: "",
+      combinedTeam: false,
+      captainName: "",
+      captainEmail: "",
+      memberCount: 0,
+      notes: "",
+    });
+    setEditingTeam(null);
+  }
 
   if (loading) {
     return (
@@ -270,6 +388,224 @@ export default function TournamentDashboardPage() {
               </ul>
               <p className="text-xs text-gray-500 mt-4">※ 開発中</p>
             </div>
+          </div>
+        </div>
+
+        {/* チーム管理セクション */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-2xl font-bold text-primary">チーム管理</h2>
+            <button
+              onClick={() => {
+                resetTeamForm();
+                setShowTeamForm(!showTeamForm);
+              }}
+              className="px-4 py-2 bg-accent text-white rounded-lg hover:bg-opacity-90 transition-colors"
+            >
+              {showTeamForm ? 'キャンセル' : '+ 新規チーム追加'}
+            </button>
+          </div>
+
+          {/* チーム追加/編集フォーム */}
+          {showTeamForm && (
+            <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+              <h3 className="text-xl font-bold mb-4 text-primary">
+                {editingTeam ? 'チーム編集' : '新規チーム追加'}
+              </h3>
+              <form onSubmit={editingTeam ? handleUpdateTeam : handleCreateTeam} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      チーム名 <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={teamFormData.teamName}
+                      onChange={(e) => setTeamFormData({ ...teamFormData, teamName: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                      placeholder="例: チームA"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      ブロック
+                    </label>
+                    <select
+                      value={teamFormData.block}
+                      onChange={(e) => setTeamFormData({ ...teamFormData, block: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                    >
+                      <option value="">未設定</option>
+                      <option value="A">ブロックA</option>
+                      <option value="B">ブロックB</option>
+                      <option value="C">ブロックC</option>
+                      <option value="D">ブロックD</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      キャプテン名
+                    </label>
+                    <input
+                      type="text"
+                      value={teamFormData.captainName}
+                      onChange={(e) => setTeamFormData({ ...teamFormData, captainName: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                      placeholder="例: 山田太郎"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      キャプテンメール
+                    </label>
+                    <input
+                      type="email"
+                      value={teamFormData.captainEmail}
+                      onChange={(e) => setTeamFormData({ ...teamFormData, captainEmail: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                      placeholder="例: yamada@example.com"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      メンバー数
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={teamFormData.memberCount}
+                      onChange={(e) => setTeamFormData({ ...teamFormData, memberCount: parseInt(e.target.value) || 0 })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="flex items-center space-x-2 mt-8">
+                      <input
+                        type="checkbox"
+                        checked={teamFormData.combinedTeam}
+                        onChange={(e) => setTeamFormData({ ...teamFormData, combinedTeam: e.target.checked })}
+                        className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary"
+                      />
+                      <span className="text-sm font-medium text-gray-700">混合チーム</span>
+                    </label>
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      備考
+                    </label>
+                    <textarea
+                      value={teamFormData.notes}
+                      onChange={(e) => setTeamFormData({ ...teamFormData, notes: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                      rows={3}
+                      placeholder="その他メモ"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-4 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowTeamForm(false);
+                      resetTeamForm();
+                    }}
+                    className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                  >
+                    キャンセル
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-6 py-2 bg-accent text-white rounded-lg hover:bg-opacity-90"
+                  >
+                    {editingTeam ? '更新' : '作成'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* チーム一覧 */}
+          <div className="bg-white rounded-lg shadow-md overflow-hidden">
+            <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
+              <h3 className="text-lg font-bold text-primary">登録チーム一覧 ({teams.length}チーム)</h3>
+            </div>
+
+            {teams.length === 0 ? (
+              <div className="p-8 text-center text-gray-600">
+                <p className="mb-4">チームが登録されていません</p>
+                <button
+                  onClick={() => setShowTeamForm(true)}
+                  className="px-6 py-2 bg-accent text-white rounded-lg hover:bg-opacity-90"
+                >
+                  最初のチームを作成
+                </button>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-100">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">チーム名</th>
+                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700">ブロック</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">キャプテン</th>
+                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700">メンバー数</th>
+                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700">混合</th>
+                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {teams.map((team) => (
+                      <tr key={team.teamId} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 font-medium">{team.teamName}</td>
+                        <td className="px-4 py-3 text-center">
+                          {team.block ? (
+                            <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded">
+                              ブロック{team.block}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400 text-xs">未設定</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-sm">
+                          <div>{team.captainName || '-'}</div>
+                          {team.captainEmail && (
+                            <div className="text-xs text-gray-500">{team.captainEmail}</div>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-center">{team.memberCount || 0}人</td>
+                        <td className="px-4 py-3 text-center">
+                          {team.combinedTeam && <span className="text-green-600">✓</span>}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <div className="flex justify-center gap-2">
+                            <button
+                              onClick={() => openEditForm(team)}
+                              className="px-3 py-1 bg-blue-500 text-white text-sm rounded hover:bg-blue-600"
+                            >
+                              編集
+                            </button>
+                            <button
+                              onClick={() => handleDeleteTeam(team.teamId, team.teamName)}
+                              className="px-3 py-1 bg-red-500 text-white text-sm rounded hover:bg-red-600"
+                            >
+                              削除
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
 

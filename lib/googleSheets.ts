@@ -295,6 +295,151 @@ export async function getTeams(tournamentId?: string): Promise<Team[]> {
   }
 }
 
+// チームを作成
+export async function createTeam(
+  tournamentId: string,
+  teamData: {
+    teamName: string;
+    block?: string;
+    combinedTeam?: boolean;
+    seedRank?: number;
+    previousRank?: number;
+    captainName?: string;
+    captainEmail?: string;
+    memberCount?: number;
+    notes?: string;
+  }
+): Promise<Team> {
+  try {
+    const doc = await getSpreadsheet();
+    const sheet = doc.sheetsByTitle['Teams'];
+    if (!sheet) {
+      throw new Error('Teams sheet not found');
+    }
+
+    // 新しいチームIDを生成（既存のチームIDから最大値を取得して+1）
+    const rows = await sheet.getRows();
+    const teamIds = rows
+      .filter(row => row.get('tournament_id') === tournamentId)
+      .map(row => {
+        const id = row.get('team_id');
+        const match = id?.match(/TEAM(\d+)$/);
+        return match ? parseInt(match[1]) : 0;
+      });
+    const maxId = teamIds.length > 0 ? Math.max(...teamIds) : 0;
+    const newTeamId = `TEAM${String(maxId + 1).padStart(3, '0')}`;
+
+    // 新しい行を追加
+    const newRow = await sheet.addRow({
+      tournament_id: tournamentId,
+      team_id: newTeamId,
+      team_name: teamData.teamName,
+      block: teamData.block || '',
+      combined_team: teamData.combinedTeam ? 'TRUE' : 'FALSE',
+      seed_rank: teamData.seedRank?.toString() || '',
+      previous_rank: teamData.previousRank?.toString() || '',
+      auto_assigned: 'FALSE',
+      captain_name: teamData.captainName || '',
+      captain_email: teamData.captainEmail || '',
+      member_count: teamData.memberCount?.toString() || '0',
+      notes: teamData.notes || '',
+    });
+
+    return {
+      teamId: newTeamId,
+      tournamentId,
+      teamName: teamData.teamName,
+      block: teamData.block || undefined,
+      combinedTeam: teamData.combinedTeam || false,
+      seedRank: teamData.seedRank || undefined,
+      previousRank: teamData.previousRank || undefined,
+      autoAssigned: false,
+      captainName: teamData.captainName || undefined,
+      captainEmail: teamData.captainEmail || undefined,
+      memberCount: teamData.memberCount || 0,
+      notes: teamData.notes || undefined,
+    };
+  } catch (error) {
+    console.error('Error creating team:', error);
+    throw error;
+  }
+}
+
+// チームを更新
+export async function updateTeam(
+  tournamentId: string,
+  teamId: string,
+  teamData: {
+    teamName?: string;
+    block?: string;
+    combinedTeam?: boolean;
+    seedRank?: number;
+    previousRank?: number;
+    captainName?: string;
+    captainEmail?: string;
+    memberCount?: number;
+    notes?: string;
+  }
+): Promise<void> {
+  try {
+    const doc = await getSpreadsheet();
+    const sheet = doc.sheetsByTitle['Teams'];
+    if (!sheet) {
+      throw new Error('Teams sheet not found');
+    }
+
+    const rows = await sheet.getRows();
+    const teamRow = rows.find(
+      row => row.get('tournament_id') === tournamentId && row.get('team_id') === teamId
+    );
+
+    if (!teamRow) {
+      throw new Error('Team not found');
+    }
+
+    // 更新
+    if (teamData.teamName !== undefined) teamRow.set('team_name', teamData.teamName);
+    if (teamData.block !== undefined) teamRow.set('block', teamData.block);
+    if (teamData.combinedTeam !== undefined) teamRow.set('combined_team', teamData.combinedTeam ? 'TRUE' : 'FALSE');
+    if (teamData.seedRank !== undefined) teamRow.set('seed_rank', teamData.seedRank.toString());
+    if (teamData.previousRank !== undefined) teamRow.set('previous_rank', teamData.previousRank.toString());
+    if (teamData.captainName !== undefined) teamRow.set('captain_name', teamData.captainName);
+    if (teamData.captainEmail !== undefined) teamRow.set('captain_email', teamData.captainEmail);
+    if (teamData.memberCount !== undefined) teamRow.set('member_count', teamData.memberCount.toString());
+    if (teamData.notes !== undefined) teamRow.set('notes', teamData.notes);
+
+    await teamRow.save();
+  } catch (error) {
+    console.error('Error updating team:', error);
+    throw error;
+  }
+}
+
+// チームを削除
+export async function deleteTeam(tournamentId: string, teamId: string): Promise<void> {
+  try {
+    const doc = await getSpreadsheet();
+    const sheet = doc.sheetsByTitle['Teams'];
+    if (!sheet) {
+      throw new Error('Teams sheet not found');
+    }
+
+    const rows = await sheet.getRows();
+    const teamRow = rows.find(
+      row => row.get('tournament_id') === tournamentId && row.get('team_id') === teamId
+    );
+
+    if (!teamRow) {
+      throw new Error('Team not found');
+    }
+
+    await teamRow.delete();
+  } catch (error) {
+    console.error('Error deleting team:', error);
+    throw error;
+  }
+}
+
 // 選手一覧を取得
 export async function getPlayers(tournamentId?: string): Promise<Player[]> {
   try {

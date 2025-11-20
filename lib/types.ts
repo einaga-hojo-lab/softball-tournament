@@ -58,14 +58,14 @@ export interface Team {
   teamId: string;
   tournamentId: string;
   teamName: string;
-  block: string;
-  combinedTeam: boolean;
+  block?: string;
+  combinedTeam?: boolean;
   seedRank?: number;
   previousRank?: number;
-  autoAssigned: boolean;
-  captainName: string;
-  captainEmail: string;
-  memberCount: number;
+  autoAssigned?: boolean;
+  captainName?: string;
+  captainEmail?: string;
+  memberCount?: number;
   notes?: string;
 }
 
