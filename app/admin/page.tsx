@@ -1,65 +1,101 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-
-interface DashboardStats {
-  tournament: any;
-  participantsCount: number;
-  teamsCount: number;
-  gamesTotal: number;
-  gamesCompleted: number;
-  gamesScheduled: number;
-  leagueGames: number;
-  tournamentGames: number;
-}
+import { Tournament } from "@/lib/types";
 
 export default function AdminPage() {
-  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const router = useRouter();
+  const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [creating, setCreating] = useState(false);
+
+  const [formData, setFormData] = useState({
+    tournamentName: "",
+    tournamentDate: "",
+    season: "S",
+    year: new Date().getFullYear(),
+    previousTournamentId: "",
+  });
 
   useEffect(() => {
-    async function fetchDashboardData() {
-      try {
-        // 大会情報を取得
-        const tournamentRes = await fetch('/api/tournaments');
-        const tournament = await tournamentRes.json();
-
-        // チーム情報を取得
-        const teamsRes = await fetch('/api/teams');
-        const teams = await teamsRes.json();
-
-        // 試合情報を取得
-        const gamesRes = await fetch('/api/games');
-        const games = await gamesRes.json();
-
-        // 個人成績を取得（参加者数のカウント用）
-        const statsRes = await fetch('/api/stats');
-        const playerStats = await statsRes.json();
-
-        // 統計情報を計算
-        const dashboardStats: DashboardStats = {
-          tournament,
-          participantsCount: playerStats.length,
-          teamsCount: teams.length,
-          gamesTotal: games.length,
-          gamesCompleted: games.filter((g: any) => g.status === 'completed').length,
-          gamesScheduled: games.filter((g: any) => g.status === 'scheduled').length,
-          leagueGames: games.filter((g: any) => g.gameType === 'league').length,
-          tournamentGames: games.filter((g: any) => g.gameType === 'tournament').length,
-        };
-
-        setStats(dashboardStats);
-        setLoading(false);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : '不明なエラー');
-        setLoading(false);
-      }
-    }
-
-    fetchDashboardData();
+    fetchTournaments();
   }, []);
+
+  async function fetchTournaments() {
+    try {
+      const res = await fetch('/api/admin/tournaments');
+      if (!res.ok) throw new Error('大会一覧の取得に失敗しました');
+      const data = await res.json();
+      setTournaments(data);
+      setLoading(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '不明なエラー');
+      setLoading(false);
+    }
+  }
+
+  async function handleCreateTournament(e: React.FormEvent) {
+    e.preventDefault();
+    setCreating(true);
+
+    try {
+      const res = await fetch('/api/admin/tournaments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      });
+
+      if (!res.ok) throw new Error('大会の作成に失敗しました');
+
+      const newTournament = await res.json();
+      setTournaments([newTournament, ...tournaments]);
+      setShowCreateForm(false);
+      setFormData({
+        tournamentName: "",
+        tournamentDate: "",
+        season: "S",
+        year: new Date().getFullYear(),
+        previousTournamentId: "",
+      });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '大会の作成に失敗しました');
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function handleUpdateStatus(tournamentId: string, status: string) {
+    try {
+      const res = await fetch(`/api/admin/tournaments/${tournamentId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+
+      if (!res.ok) throw new Error('ステータスの更新に失敗しました');
+
+      await fetchTournaments();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'ステータスの更新に失敗しました');
+    }
+  }
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'active':
+        return <span className="px-3 py-1 bg-green-100 text-green-800 text-sm rounded-full font-semibold">アクティブ</span>;
+      case 'draft':
+        return <span className="px-3 py-1 bg-blue-100 text-blue-800 text-sm rounded-full">下書き</span>;
+      case 'completed':
+        return <span className="px-3 py-1 bg-gray-100 text-gray-800 text-sm rounded-full">完了</span>;
+      default:
+        return <span className="px-3 py-1 bg-gray-100 text-gray-800 text-sm rounded-full">{status}</span>;
+    }
+  };
 
   if (loading) {
     return (
@@ -70,7 +106,7 @@ export default function AdminPage() {
               ← ホームに戻る
             </Link>
           </div>
-          <h1 className="text-4xl font-bold mb-2 text-accent">管理ダッシュボード</h1>
+          <h1 className="text-4xl font-bold mb-2 text-accent">大会管理</h1>
           <div className="bg-white rounded-lg shadow-md p-6 mt-8">
             <p className="text-gray-600">読み込み中...</p>
           </div>
@@ -79,7 +115,7 @@ export default function AdminPage() {
     );
   }
 
-  if (error || !stats) {
+  if (error) {
     return (
       <main className="min-h-screen bg-gray-50">
         <div className="container mx-auto px-4 py-8">
@@ -88,9 +124,9 @@ export default function AdminPage() {
               ← ホームに戻る
             </Link>
           </div>
-          <h1 className="text-4xl font-bold mb-2 text-accent">管理ダッシュボード</h1>
+          <h1 className="text-4xl font-bold mb-2 text-accent">大会管理</h1>
           <div className="bg-white rounded-lg shadow-md p-6 mt-8">
-            <p className="text-red-600">{error || 'データの取得に失敗しました'}</p>
+            <p className="text-red-600">{error}</p>
           </div>
         </div>
       </main>
@@ -106,170 +142,197 @@ export default function AdminPage() {
           </Link>
         </div>
 
-        <h1 className="text-4xl font-bold mb-2 text-accent">
-          管理ダッシュボード
-        </h1>
-        <p className="text-gray-600 mb-8">
-          {stats.tournament.tournamentName} - 大会運営・管理機能
-        </p>
-
-        {/* 概要統計 */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600 mb-1">参加者数</p>
-                <p className="text-3xl font-bold text-primary">{stats.participantsCount}</p>
-              </div>
-              <div className="text-4xl">👥</div>
-            </div>
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-4xl font-bold text-accent">大会管理</h1>
+            <p className="text-gray-600 mt-2">大会の作成・管理</p>
           </div>
-
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600 mb-1">チーム数</p>
-                <p className="text-3xl font-bold text-primary">{stats.teamsCount}</p>
-              </div>
-              <div className="text-4xl">🎯</div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600 mb-1">総試合数</p>
-                <p className="text-3xl font-bold text-primary">{stats.gamesTotal}</p>
-                <p className="text-xs text-gray-500 mt-1">
-                  完了: {stats.gamesCompleted} / 予定: {stats.gamesScheduled}
-                </p>
-              </div>
-              <div className="text-4xl">⚾</div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600 mb-1">大会進行率</p>
-                <p className="text-3xl font-bold text-primary">
-                  {stats.gamesTotal > 0
-                    ? Math.round((stats.gamesCompleted / stats.gamesTotal) * 100)
-                    : 0}%
-                </p>
-              </div>
-              <div className="text-4xl">📊</div>
-            </div>
-          </div>
+          <button
+            onClick={() => setShowCreateForm(!showCreateForm)}
+            className="px-6 py-3 bg-accent text-white rounded-lg hover:bg-opacity-90 transition-colors font-semibold"
+          >
+            {showCreateForm ? 'キャンセル' : '+ 新規大会作成'}
+          </button>
         </div>
 
-        {/* クイックアクション */}
-        <div className="mb-8">
-          <h2 className="text-2xl font-bold mb-4 text-primary">クイックアクション</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Link href="/schedule">
-              <div className="bg-white rounded-lg shadow-md p-4 hover:shadow-lg transition-shadow cursor-pointer border-l-4 border-blue-500">
-                <h3 className="font-semibold text-lg mb-2">📅 スケジュール確認</h3>
-                <p className="text-sm text-gray-600">試合スケジュールを表示</p>
-              </div>
-            </Link>
+        {/* 大会作成フォーム */}
+        {showCreateForm && (
+          <div className="bg-white rounded-lg shadow-md p-6 mb-8">
+            <h2 className="text-2xl font-bold mb-4 text-primary">新規大会作成</h2>
+            <form onSubmit={handleCreateTournament} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    大会名 <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.tournamentName}
+                    onChange={(e) => setFormData({ ...formData, tournamentName: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                    placeholder="例: 2025年春季ソフトボール大会"
+                  />
+                </div>
 
-            <Link href="/games">
-              <div className="bg-white rounded-lg shadow-md p-4 hover:shadow-lg transition-shadow cursor-pointer border-l-4 border-green-500">
-                <h3 className="font-semibold text-lg mb-2">⚾ 試合結果</h3>
-                <p className="text-sm text-gray-600">試合結果の確認・編集</p>
-              </div>
-            </Link>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    開催日 <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={formData.tournamentDate}
+                    onChange={(e) => setFormData({ ...formData, tournamentDate: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                  />
+                </div>
 
-            <Link href="/league">
-              <div className="bg-white rounded-lg shadow-md p-4 hover:shadow-lg transition-shadow cursor-pointer border-l-4 border-yellow-500">
-                <h3 className="font-semibold text-lg mb-2">🏆 リーグ順位表</h3>
-                <p className="text-sm text-gray-600">順位表を確認</p>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    年度 <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    value={formData.year}
+                    onChange={(e) => setFormData({ ...formData, year: parseInt(e.target.value) })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                    min="2020"
+                    max="2100"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    シーズン <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    required
+                    value={formData.season}
+                    onChange={(e) => setFormData({ ...formData, season: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                  >
+                    <option value="S">春季 (S)</option>
+                    <option value="F">秋季 (F)</option>
+                  </select>
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    前回大会ID（オプション）
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.previousTournamentId}
+                    onChange={(e) => setFormData({ ...formData, previousTournamentId: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                    placeholder="例: T2024F"
+                  />
+                  <p className="text-sm text-gray-500 mt-1">前回大会のデータを引き継ぐ場合は指定してください</p>
+                </div>
               </div>
-            </Link>
+
+              <div className="flex justify-end gap-4 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateForm(false)}
+                  className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                  disabled={creating}
+                >
+                  キャンセル
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2 bg-accent text-white rounded-lg hover:bg-opacity-90 disabled:opacity-50"
+                  disabled={creating}
+                >
+                  {creating ? '作成中...' : '作成'}
+                </button>
+              </div>
+            </form>
           </div>
-        </div>
+        )}
 
-        {/* 管理機能メニュー */}
-        <div className="mb-8">
-          <h2 className="text-2xl font-bold mb-4 text-primary">管理機能</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <div className="bg-white rounded-lg shadow-md p-6">
-              <h3 className="text-xl font-semibold mb-4 text-primary">
-                大会管理
-              </h3>
-              <ul className="space-y-2 text-sm text-gray-600">
-                <li className="p-2 hover:bg-gray-50 rounded cursor-pointer">📅 大会作成・設定</li>
-                <li className="p-2 hover:bg-gray-50 rounded cursor-pointer">📋 大会一覧</li>
-                <li className="p-2 hover:bg-gray-50 rounded cursor-pointer">📊 大会ステータス</li>
-              </ul>
-              <p className="text-xs text-gray-500 mt-4">※ 開発中</p>
-            </div>
-
-            <div className="bg-white rounded-lg shadow-md p-6">
-              <h3 className="text-xl font-semibold mb-4 text-primary">
-                参加者・集金管理
-              </h3>
-              <ul className="space-y-2 text-sm text-gray-600">
-                <li className="p-2 hover:bg-gray-50 rounded cursor-pointer">👥 参加者一覧</li>
-                <li className="p-2 hover:bg-gray-50 rounded cursor-pointer">💰 集金状況</li>
-                <li className="p-2 hover:bg-gray-50 rounded cursor-pointer">📧 リマインダー送信</li>
-              </ul>
-              <p className="text-xs text-gray-500 mt-4">※ 開発中</p>
-            </div>
-
-            <div className="bg-white rounded-lg shadow-md p-6">
-              <h3 className="text-xl font-semibold mb-4 text-primary">
-                チーム・リーグ編成
-              </h3>
-              <ul className="space-y-2 text-sm text-gray-600">
-                <li className="p-2 hover:bg-gray-50 rounded cursor-pointer">🎯 チーム管理</li>
-                <li className="p-2 hover:bg-gray-50 rounded cursor-pointer">🔀 リーグ自動振り分け</li>
-                <li className="p-2 hover:bg-gray-50 rounded cursor-pointer">⭐ シード設定</li>
-              </ul>
-              <p className="text-xs text-gray-500 mt-4">※ 開発中</p>
-            </div>
-
-            <div className="bg-white rounded-lg shadow-md p-6">
-              <h3 className="text-xl font-semibold mb-4 text-primary">
-                スケジュール管理
-              </h3>
-              <ul className="space-y-2 text-sm text-gray-600">
-                <li className="p-2 hover:bg-gray-50 rounded cursor-pointer">📅 スケジュール自動生成</li>
-                <li className="p-2 hover:bg-gray-50 rounded cursor-pointer">✏️ スケジュール調整</li>
-                <li className="p-2 hover:bg-gray-50 rounded cursor-pointer">🏟️ グラウンド割り当て</li>
-              </ul>
-              <p className="text-xs text-gray-500 mt-4">※ 開発中</p>
-            </div>
-
-            <div className="bg-white rounded-lg shadow-md p-6">
-              <h3 className="text-xl font-semibold mb-4 text-primary">
-                試合記録
-              </h3>
-              <ul className="space-y-2 text-sm text-gray-600">
-                <li className="p-2 hover:bg-gray-50 rounded cursor-pointer">⚾ 試合結果入力</li>
-                <li className="p-2 hover:bg-gray-50 rounded cursor-pointer">📝 スコア修正</li>
-                <li className="p-2 hover:bg-gray-50 rounded cursor-pointer">🏆 トーナメント管理</li>
-              </ul>
-              <p className="text-xs text-gray-500 mt-4">※ 開発中</p>
-            </div>
-
-            <div className="bg-white rounded-lg shadow-md p-6">
-              <h3 className="text-xl font-semibold mb-4 text-primary">
-                データ管理
-              </h3>
-              <ul className="space-y-2 text-sm text-gray-600">
-                <li className="p-2 hover:bg-gray-50 rounded cursor-pointer">📥 データエクスポート</li>
-                <li className="p-2 hover:bg-gray-50 rounded cursor-pointer">💾 バックアップ</li>
-                <li className="p-2 hover:bg-gray-50 rounded cursor-pointer">🗃️ アーカイブ</li>
-              </ul>
-              <p className="text-xs text-gray-500 mt-4">※ 開発中</p>
-            </div>
+        {/* 大会一覧 */}
+        <div className="bg-white rounded-lg shadow-md overflow-hidden">
+          <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
+            <h2 className="text-xl font-bold text-primary">大会一覧</h2>
           </div>
+
+          {tournaments.length === 0 ? (
+            <div className="p-8 text-center text-gray-600">
+              <p className="mb-4">大会が登録されていません</p>
+              <button
+                onClick={() => setShowCreateForm(true)}
+                className="px-6 py-2 bg-accent text-white rounded-lg hover:bg-opacity-90"
+              >
+                最初の大会を作成
+              </button>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-200">
+              {tournaments.map((tournament) => (
+                <div key={tournament.tournamentId} className="p-6 hover:bg-gray-50 transition-colors">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-2">
+                        <h3 className="text-xl font-semibold text-gray-900">
+                          {tournament.tournamentName}
+                        </h3>
+                        {getStatusBadge(tournament.status)}
+                      </div>
+                      <div className="flex flex-wrap gap-4 text-sm text-gray-600 mb-3">
+                        <div className="flex items-center gap-1">
+                          <span className="font-medium">ID:</span>
+                          <span>{tournament.tournamentId}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="font-medium">開催日:</span>
+                          <span>{tournament.tournamentDate}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="font-medium">作成日:</span>
+                          <span>{new Date(tournament.createdAt).toLocaleDateString('ja-JP')}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => router.push(`/admin/tournament/${tournament.tournamentId}`)}
+                          className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-opacity-90 transition-colors"
+                        >
+                          ダッシュボードを開く →
+                        </button>
+
+                        {tournament.status === 'draft' && (
+                          <button
+                            onClick={() => handleUpdateStatus(tournament.tournamentId, 'active')}
+                            className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-opacity-90"
+                          >
+                            アクティブにする
+                          </button>
+                        )}
+
+                        {tournament.status === 'active' && (
+                          <button
+                            onClick={() => handleUpdateStatus(tournament.tournamentId, 'completed')}
+                            className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-opacity-90"
+                          >
+                            完了にする
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* 注意事項 */}
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+        <div className="mt-8 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
           <p className="text-sm text-yellow-800">
             <strong>📝 注意:</strong> この管理画面は運営者専用です。URLを関係者以外に共有しないでください。
           </p>

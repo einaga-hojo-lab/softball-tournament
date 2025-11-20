@@ -1,18 +1,27 @@
 import { NextResponse } from 'next/server';
 import { getPlayerStats, getCurrentTournament } from '@/lib/googleSheets';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const tournament = await getCurrentTournament();
+    const { searchParams } = new URL(request.url);
+    const tournamentId = searchParams.get('tournamentId');
 
-    if (!tournament) {
-      return NextResponse.json(
-        { error: 'アクティブな大会が見つかりません' },
-        { status: 404 }
-      );
+    let targetTournamentId: string;
+
+    if (tournamentId) {
+      targetTournamentId = tournamentId;
+    } else {
+      const tournament = await getCurrentTournament();
+      if (!tournament) {
+        return NextResponse.json(
+          { error: 'アクティブな大会が見つかりません' },
+          { status: 404 }
+        );
+      }
+      targetTournamentId = tournament.tournamentId;
     }
 
-    const stats = await getPlayerStats(tournament.tournamentId);
+    const stats = await getPlayerStats(targetTournamentId);
 
     // 打率の高い順にソート
     const sortedStats = stats.sort((a, b) => b.battingAverage - a.battingAverage);

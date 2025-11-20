@@ -14,13 +14,17 @@ export default function StatsPage() {
   useEffect(() => {
     async function fetchData() {
       try {
+        const searchParams = new URLSearchParams(window.location.search);
+        const tournamentId = searchParams.get('tournamentId');
+        const params = tournamentId ? `?tournamentId=${tournamentId}` : '';
+
         // 個人成績を取得
-        const statsRes = await fetch('/api/stats');
+        const statsRes = await fetch(`/api/stats${params}`);
         if (!statsRes.ok) throw new Error('個人成績の取得に失敗しました');
         const statsData = await statsRes.json();
 
         // チーム情報を取得
-        const teamsRes = await fetch('/api/teams');
+        const teamsRes = await fetch(`/api/teams${params}`);
         if (!teamsRes.ok) throw new Error('チーム情報の取得に失敗しました');
         const teamsData = await teamsRes.json();
 

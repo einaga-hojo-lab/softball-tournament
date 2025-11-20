@@ -14,7 +14,7 @@ export type PaymentStatus = 'unpaid' | 'paid' | 'refunded' | 'exempted';
 export type PaymentMethod = 'paypay' | 'bank_transfer' | 'cash' | 'other';
 
 // 大会ステータス
-export type TournamentStatus = 'upcoming' | 'registration_open' | 'active' | 'completed' | 'archived';
+export type TournamentStatus = 'draft' | 'upcoming' | 'registration_open' | 'active' | 'completed' | 'archived';
 
 // 大会情報
 export interface Tournament {

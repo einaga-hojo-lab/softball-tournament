@@ -29,6 +29,69 @@ export async function getSpreadsheet() {
   throw new Error('Google Sheets authentication credentials not found');
 }
 
+// すべての大会を取得
+export async function getTournaments(): Promise<Tournament[]> {
+  try {
+    const doc = await getSpreadsheet();
+    const sheet = doc.sheetsByTitle['Tournaments'];
+    if (!sheet) {
+      console.error('Tournaments sheet not found');
+      return [];
+    }
+
+    const rows = await sheet.getRows();
+
+    return rows.map(row => ({
+      tournamentId: row.get('tournament_id'),
+      tournamentName: row.get('tournament_name'),
+      tournamentDate: row.get('tournament_date'),
+      status: row.get('status'),
+      createdAt: row.get('created_at'),
+      archived: row.get('archived') === 'TRUE',
+      season: row.get('season'),
+      year: parseInt(row.get('year')),
+      previousTournamentId: row.get('previous_tournament_id'),
+    }));
+  } catch (error) {
+    console.error('Error fetching tournaments:', error);
+    return [];
+  }
+}
+
+// 特定の大会を取得
+export async function getTournamentById(tournamentId: string): Promise<Tournament | null> {
+  try {
+    const doc = await getSpreadsheet();
+    const sheet = doc.sheetsByTitle['Tournaments'];
+    if (!sheet) {
+      console.error('Tournaments sheet not found');
+      return null;
+    }
+
+    const rows = await sheet.getRows();
+    const tournament = rows.find(row => row.get('tournament_id') === tournamentId);
+
+    if (!tournament) {
+      return null;
+    }
+
+    return {
+      tournamentId: tournament.get('tournament_id'),
+      tournamentName: tournament.get('tournament_name'),
+      tournamentDate: tournament.get('tournament_date'),
+      status: tournament.get('status'),
+      createdAt: tournament.get('created_at'),
+      archived: tournament.get('archived') === 'TRUE',
+      season: tournament.get('season'),
+      year: parseInt(tournament.get('year')),
+      previousTournamentId: tournament.get('previous_tournament_id'),
+    };
+  } catch (error) {
+    console.error('Error fetching tournament:', error);
+    return null;
+  }
+}
+
 // 現在アクティブな大会を取得
 export async function getCurrentTournament(): Promise<Tournament | null> {
   try {
@@ -60,6 +123,79 @@ export async function getCurrentTournament(): Promise<Tournament | null> {
   } catch (error) {
     console.error('Error fetching current tournament:', error);
     return null;
+  }
+}
+
+// 新しい大会を作成
+export async function createTournament(data: {
+  tournamentName: string;
+  tournamentDate: string;
+  season: string;
+  year: number;
+  previousTournamentId?: string;
+}): Promise<Tournament> {
+  try {
+    const doc = await getSpreadsheet();
+    const sheet = doc.sheetsByTitle['Tournaments'];
+    if (!sheet) {
+      throw new Error('Tournaments sheet not found');
+    }
+
+    // Generate tournament ID
+    const tournamentId = `T${data.year}${data.season}`;
+    const createdAt = new Date().toISOString();
+
+    // Add new row
+    await sheet.addRow({
+      tournament_id: tournamentId,
+      tournament_name: data.tournamentName,
+      tournament_date: data.tournamentDate,
+      status: 'draft',
+      created_at: createdAt,
+      archived: 'FALSE',
+      season: data.season,
+      year: data.year,
+      previous_tournament_id: data.previousTournamentId || '',
+    });
+
+    return {
+      tournamentId,
+      tournamentName: data.tournamentName,
+      tournamentDate: data.tournamentDate,
+      status: 'draft',
+      createdAt,
+      archived: false,
+      season: data.season,
+      year: data.year,
+      previousTournamentId: data.previousTournamentId,
+    };
+  } catch (error) {
+    console.error('Error creating tournament:', error);
+    throw error;
+  }
+}
+
+// 大会のステータスを更新
+export async function updateTournamentStatus(tournamentId: string, status: string): Promise<void> {
+  try {
+    const doc = await getSpreadsheet();
+    const sheet = doc.sheetsByTitle['Tournaments'];
+    if (!sheet) {
+      throw new Error('Tournaments sheet not found');
+    }
+
+    const rows = await sheet.getRows();
+    const tournament = rows.find(row => row.get('tournament_id') === tournamentId);
+
+    if (!tournament) {
+      throw new Error('Tournament not found');
+    }
+
+    tournament.set('status', status);
+    await tournament.save();
+  } catch (error) {
+    console.error('Error updating tournament status:', error);
+    throw error;
   }
 }
 

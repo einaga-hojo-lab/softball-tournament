@@ -15,13 +15,18 @@ export default function SchedulePage() {
   useEffect(() => {
     async function fetchData() {
       try {
+        // URLパラメータを取得
+        const searchParams = new URLSearchParams(window.location.search);
+        const tournamentId = searchParams.get('tournamentId');
+        const params = tournamentId ? `?tournamentId=${tournamentId}` : '';
+
         // 試合情報を取得
-        const gamesRes = await fetch('/api/games');
+        const gamesRes = await fetch(`/api/games${params}`);
         if (!gamesRes.ok) throw new Error('試合情報の取得に失敗しました');
         const gamesData = await gamesRes.json();
 
         // チーム情報を取得
-        const teamsRes = await fetch('/api/teams');
+        const teamsRes = await fetch(`/api/teams${params}`);
         if (!teamsRes.ok) throw new Error('チーム情報の取得に失敗しました');
         const teamsData = await teamsRes.json();
 

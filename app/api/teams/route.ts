@@ -1,18 +1,27 @@
 import { NextResponse } from 'next/server';
 import { getTeams, getCurrentTournament } from '@/lib/googleSheets';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const tournament = await getCurrentTournament();
+    const { searchParams } = new URL(request.url);
+    const tournamentId = searchParams.get('tournamentId');
 
-    if (!tournament) {
-      return NextResponse.json(
-        { error: 'アクティブな大会が見つかりません' },
-        { status: 404 }
-      );
+    let targetTournamentId: string;
+
+    if (tournamentId) {
+      targetTournamentId = tournamentId;
+    } else {
+      const tournament = await getCurrentTournament();
+      if (!tournament) {
+        return NextResponse.json(
+          { error: 'アクティブな大会が見つかりません' },
+          { status: 404 }
+        );
+      }
+      targetTournamentId = tournament.tournamentId;
     }
 
-    const teams = await getTeams(tournament.tournamentId);
+    const teams = await getTeams(targetTournamentId);
     return NextResponse.json(teams);
   } catch (error) {
     console.error('Error fetching teams:', error);

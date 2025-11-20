@@ -13,13 +13,17 @@ export default function LeaguePage() {
   useEffect(() => {
     async function fetchData() {
       try {
+        const searchParams = new URLSearchParams(window.location.search);
+        const tournamentId = searchParams.get('tournamentId');
+        const params = tournamentId ? `?tournamentId=${tournamentId}` : '';
+
         // リーグ順位表を取得
-        const standingsRes = await fetch('/api/league');
+        const standingsRes = await fetch(`/api/league${params}`);
         if (!standingsRes.ok) throw new Error('リーグ順位表の取得に失敗しました');
         const standingsData = await standingsRes.json();
 
         // チーム情報を取得
-        const teamsRes = await fetch('/api/teams');
+        const teamsRes = await fetch(`/api/teams${params}`);
         if (!teamsRes.ok) throw new Error('チーム情報の取得に失敗しました');
         const teamsData = await teamsRes.json();
 
