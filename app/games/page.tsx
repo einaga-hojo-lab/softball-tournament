@@ -10,13 +10,15 @@ export default function GamesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'league' | 'tournament'>('all');
+  const [tournamentId, setTournamentId] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchData() {
       try {
         const searchParams = new URLSearchParams(window.location.search);
-        const tournamentId = searchParams.get('tournamentId');
-        const params = tournamentId ? `?tournamentId=${tournamentId}` : '';
+        const tid = searchParams.get('tournamentId');
+        setTournamentId(tid);
+        const params = tid ? `?tournamentId=${tid}` : '';
 
         // 試合情報を取得
         const gamesRes = await fetch(`/api/games${params}`);
@@ -46,13 +48,16 @@ export default function GamesPage() {
     fetchData();
   }, []);
 
+  const backLink = tournamentId ? `/admin/tournament/${tournamentId}` : '/schedule';
+  const backText = tournamentId ? '← ダッシュボードに戻る' : '← スケジュールに戻る';
+
   if (loading) {
     return (
       <main className="min-h-screen bg-gray-50">
         <div className="container mx-auto px-4 py-8">
           <div className="mb-6">
-            <Link href="/schedule" className="text-primary hover:underline">
-              ← スケジュールに戻る
+            <Link href={backLink} className="text-primary hover:underline">
+              {backText}
             </Link>
           </div>
           <h1 className="text-4xl font-bold mb-8 text-primary">試合結果</h1>
@@ -69,8 +74,8 @@ export default function GamesPage() {
       <main className="min-h-screen bg-gray-50">
         <div className="container mx-auto px-4 py-8">
           <div className="mb-6">
-            <Link href="/schedule" className="text-primary hover:underline">
-              ← スケジュールに戻る
+            <Link href={backLink} className="text-primary hover:underline">
+              {backText}
             </Link>
           </div>
           <h1 className="text-4xl font-bold mb-8 text-primary">試合結果</h1>
@@ -109,8 +114,8 @@ export default function GamesPage() {
     <main className="min-h-screen bg-gray-50">
       <div className="container mx-auto px-4 py-8">
         <div className="mb-6">
-          <Link href="/schedule" className="text-primary hover:underline">
-            ← スケジュールに戻る
+          <Link href={backLink} className="text-primary hover:underline">
+            {backText}
           </Link>
         </div>
 

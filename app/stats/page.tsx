@@ -10,13 +10,15 @@ export default function StatsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [category, setCategory] = useState<'average' | 'homeruns' | 'rbis'>('average');
+  const [tournamentId, setTournamentId] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchData() {
       try {
         const searchParams = new URLSearchParams(window.location.search);
-        const tournamentId = searchParams.get('tournamentId');
-        const params = tournamentId ? `?tournamentId=${tournamentId}` : '';
+        const tid = searchParams.get('tournamentId');
+        setTournamentId(tid);
+        const params = tid ? `?tournamentId=${tid}` : '';
 
         // 個人成績を取得
         const statsRes = await fetch(`/api/stats${params}`);
@@ -46,13 +48,16 @@ export default function StatsPage() {
     fetchData();
   }, []);
 
+  const backLink = tournamentId ? `/admin/tournament/${tournamentId}` : '/schedule';
+  const backText = tournamentId ? '← ダッシュボードに戻る' : '← スケジュールに戻る';
+
   if (loading) {
     return (
       <main className="min-h-screen bg-gray-50">
         <div className="container mx-auto px-4 py-8">
           <div className="mb-6">
-            <Link href="/schedule" className="text-primary hover:underline">
-              ← スケジュールに戻る
+            <Link href={backLink} className="text-primary hover:underline">
+              {backText}
             </Link>
           </div>
           <h1 className="text-4xl font-bold mb-8 text-primary">個人成績ランキング</h1>
@@ -69,8 +74,8 @@ export default function StatsPage() {
       <main className="min-h-screen bg-gray-50">
         <div className="container mx-auto px-4 py-8">
           <div className="mb-6">
-            <Link href="/schedule" className="text-primary hover:underline">
-              ← スケジュールに戻る
+            <Link href={backLink} className="text-primary hover:underline">
+              {backText}
             </Link>
           </div>
           <h1 className="text-4xl font-bold mb-8 text-primary">個人成績ランキング</h1>
@@ -110,8 +115,8 @@ export default function StatsPage() {
     <main className="min-h-screen bg-gray-50">
       <div className="container mx-auto px-4 py-8">
         <div className="mb-6">
-          <Link href="/schedule" className="text-primary hover:underline">
-            ← スケジュールに戻る
+          <Link href={backLink} className="text-primary hover:underline">
+            {backText}
           </Link>
         </div>
 
