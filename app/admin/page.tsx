@@ -68,7 +68,11 @@ export default function AdminPage() {
     }
   }
 
-  async function handleUpdateStatus(tournamentId: string, status: string) {
+  async function handleUpdateStatus(tournamentId: string, status: string, confirmMessage?: string) {
+    if (confirmMessage && !confirm(confirmMessage)) {
+      return;
+    }
+
     try {
       const res = await fetch(`/api/admin/tournaments/${tournamentId}`, {
         method: 'PATCH',
@@ -81,6 +85,24 @@ export default function AdminPage() {
       await fetchTournaments();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'ステータスの更新に失敗しました');
+    }
+  }
+
+  async function handleDeleteTournament(tournamentId: string, tournamentName: string) {
+    if (!confirm(`本当に「${tournamentName}」を削除しますか？\n\nこの操作は取り消せません。`)) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/admin/tournaments/${tournamentId}`, {
+        method: 'DELETE',
+      });
+
+      if (!res.ok) throw new Error('大会の削除に失敗しました');
+
+      await fetchTournaments();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '大会の削除に失敗しました');
     }
   }
 
@@ -306,20 +328,45 @@ export default function AdminPage() {
                         </button>
 
                         {tournament.status === 'draft' && (
-                          <button
-                            onClick={() => handleUpdateStatus(tournament.tournamentId, 'active')}
-                            className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-opacity-90"
-                          >
-                            アクティブにする
-                          </button>
+                          <>
+                            <button
+                              onClick={() => handleUpdateStatus(tournament.tournamentId, 'active')}
+                              className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-opacity-90"
+                            >
+                              アクティブにする
+                            </button>
+                            <button
+                              onClick={() => handleDeleteTournament(tournament.tournamentId, tournament.tournamentName)}
+                              className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-opacity-90"
+                            >
+                              削除
+                            </button>
+                          </>
                         )}
 
                         {tournament.status === 'active' && (
                           <button
-                            onClick={() => handleUpdateStatus(tournament.tournamentId, 'completed')}
+                            onClick={() => handleUpdateStatus(
+                              tournament.tournamentId,
+                              'completed',
+                              '大会を完了状態にしますか？'
+                            )}
                             className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-opacity-90"
                           >
                             完了にする
+                          </button>
+                        )}
+
+                        {tournament.status === 'completed' && (
+                          <button
+                            onClick={() => handleUpdateStatus(
+                              tournament.tournamentId,
+                              'active',
+                              '大会をアクティブ状態に戻しますか？'
+                            )}
+                            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-opacity-90"
+                          >
+                            アクティブに戻す
                           </button>
                         )}
                       </div>

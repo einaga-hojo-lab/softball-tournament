@@ -199,6 +199,29 @@ export async function updateTournamentStatus(tournamentId: string, status: strin
   }
 }
 
+// 大会を削除
+export async function deleteTournament(tournamentId: string): Promise<void> {
+  try {
+    const doc = await getSpreadsheet();
+    const sheet = doc.sheetsByTitle['Tournaments'];
+    if (!sheet) {
+      throw new Error('Tournaments sheet not found');
+    }
+
+    const rows = await sheet.getRows();
+    const tournament = rows.find(row => row.get('tournament_id') === tournamentId);
+
+    if (!tournament) {
+      throw new Error('Tournament not found');
+    }
+
+    await tournament.delete();
+  } catch (error) {
+    console.error('Error deleting tournament:', error);
+    throw error;
+  }
+}
+
 // 試合一覧を取得
 export async function getGames(tournamentId?: string): Promise<Game[]> {
   try {
