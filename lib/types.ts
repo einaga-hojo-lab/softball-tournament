@@ -165,6 +165,21 @@ export interface PlayerStats {
   battingAverage: number;
 }
 
+// チーム統計
+export interface TeamStats {
+  tournamentId: string;
+  teamId: string;
+  teamName: string;
+  gamesPlayed: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  runsScored: number;
+  runsAllowed: number;
+  runDifferential: number;
+  winRate: number;
+}
+
 // 集金サマリー
 export interface PaymentSummary {
   tournamentId: string;

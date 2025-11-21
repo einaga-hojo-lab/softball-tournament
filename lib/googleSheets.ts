@@ -1,6 +1,6 @@
 import { GoogleSpreadsheet } from 'google-spreadsheet';
 import { JWT } from 'google-auth-library';
-import { Game, Team, Player, Tournament, LeagueStanding, PlayerStats } from './types';
+import { Game, Team, Player, Tournament, LeagueStanding, PlayerStats, TeamStats } from './types';
 
 // Google Sheetsドキュメントの取得
 export async function getSpreadsheet() {
@@ -863,6 +863,105 @@ export async function getPlayerStats(tournamentId: string): Promise<PlayerStats[
       }));
   } catch (error) {
     console.error('Error fetching player stats:', error);
+    return [];
+  }
+}
+
+export async function getTeamStats(tournamentId: string): Promise<TeamStats[]> {
+  try {
+    const doc = await getSpreadsheet();
+    const gamesSheet = doc.sheetsByTitle['Games'];
+    const teamsSheet = doc.sheetsByTitle['Teams'];
+
+    if (!gamesSheet || !teamsSheet) {
+      console.error('Required sheets not found');
+      return [];
+    }
+
+    const games = await gamesSheet.getRows();
+    const teams = await teamsSheet.getRows();
+
+    // フィルタリングされた試合データ（完了した試合のみ）
+    const completedGames = games.filter(
+      row => row.get('tournament_id') === tournamentId && row.get('status') === 'completed'
+    );
+
+    // チームごとの統計を計算
+    const teamStatsMap = new Map<string, {
+      teamId: string;
+      teamName: string;
+      gamesPlayed: number;
+      wins: number;
+      losses: number;
+      draws: number;
+      runsScored: number;
+      runsAllowed: number;
+    }>();
+
+    // チーム情報を取得
+    teams
+      .filter(row => row.get('tournament_id') === tournamentId)
+      .forEach(team => {
+        const teamId = team.get('team_id');
+        teamStatsMap.set(teamId, {
+          teamId,
+          teamName: team.get('team_name'),
+          gamesPlayed: 0,
+          wins: 0,
+          losses: 0,
+          draws: 0,
+          runsScored: 0,
+          runsAllowed: 0,
+        });
+      });
+
+    // 試合結果から統計を計算
+    completedGames.forEach(game => {
+      const teamHomeId = game.get('team_home_id');
+      const teamAwayId = game.get('team_away_id');
+      const scoreHome = parseInt(game.get('score_home') || '0');
+      const scoreAway = parseInt(game.get('score_away') || '0');
+
+      const homeStats = teamStatsMap.get(teamHomeId);
+      const awayStats = teamStatsMap.get(teamAwayId);
+
+      if (homeStats) {
+        homeStats.gamesPlayed++;
+        homeStats.runsScored += scoreHome;
+        homeStats.runsAllowed += scoreAway;
+
+        if (scoreHome > scoreAway) homeStats.wins++;
+        else if (scoreHome < scoreAway) homeStats.losses++;
+        else homeStats.draws++;
+      }
+
+      if (awayStats) {
+        awayStats.gamesPlayed++;
+        awayStats.runsScored += scoreAway;
+        awayStats.runsAllowed += scoreHome;
+
+        if (scoreAway > scoreHome) awayStats.wins++;
+        else if (scoreAway < scoreHome) awayStats.losses++;
+        else awayStats.draws++;
+      }
+    });
+
+    // 最終的な統計を作成
+    return Array.from(teamStatsMap.values()).map(stats => ({
+      tournamentId,
+      teamId: stats.teamId,
+      teamName: stats.teamName,
+      gamesPlayed: stats.gamesPlayed,
+      wins: stats.wins,
+      losses: stats.losses,
+      draws: stats.draws,
+      runsScored: stats.runsScored,
+      runsAllowed: stats.runsAllowed,
+      runDifferential: stats.runsScored - stats.runsAllowed,
+      winRate: stats.gamesPlayed > 0 ? stats.wins / stats.gamesPlayed : 0,
+    }));
+  } catch (error) {
+    console.error('Error calculating team stats:', error);
     return [];
   }
 }
