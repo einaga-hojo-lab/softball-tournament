@@ -622,11 +622,14 @@ export default function TournamentDashboardPage() {
                 データ管理
               </h3>
               <ul className="space-y-2 text-sm text-gray-600">
+                <Link href={`/admin/participants?tournamentId=${tournamentId}`}>
+                  <li className="p-2 hover:bg-gray-50 rounded cursor-pointer text-primary font-semibold">💰 参加費管理 →</li>
+                </Link>
                 <li className="p-2 hover:bg-gray-50 rounded cursor-pointer">📥 データエクスポート</li>
                 <li className="p-2 hover:bg-gray-50 rounded cursor-pointer">💾 バックアップ</li>
                 <li className="p-2 hover:bg-gray-50 rounded cursor-pointer">🗃️ アーカイブ</li>
               </ul>
-              <p className="text-xs text-gray-500 mt-4">※ 開発中</p>
+              <p className="text-xs text-gray-500 mt-4">※ データエクスポート以降は開発中</p>
             </div>
 
             <div className="bg-white rounded-lg shadow-md p-6">

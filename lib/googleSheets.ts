@@ -1,6 +1,6 @@
 import { GoogleSpreadsheet } from 'google-spreadsheet';
 import { JWT } from 'google-auth-library';
-import { Game, Team, Player, Tournament, LeagueStanding, PlayerStats, TeamStats } from './types';
+import { Game, Team, Player, Tournament, LeagueStanding, PlayerStats, TeamStats, Participant, PaymentSummary } from './types';
 
 // Google Sheetsドキュメントの取得
 export async function getSpreadsheet() {
@@ -1069,5 +1069,173 @@ export async function getTeamStats(tournamentId: string): Promise<TeamStats[]> {
   } catch (error) {
     console.error('Error calculating team stats:', error);
     return [];
+  }
+}
+
+// ===== 参加者管理 =====
+
+export async function getParticipants(tournamentId: string): Promise<Participant[]> {
+  try {
+    const doc = await getSpreadsheet();
+    const sheet = doc.sheetsByTitle['Participants'];
+    if (!sheet) {
+      console.error('Participants sheet not found');
+      return [];
+    }
+
+    const rows = await sheet.getRows();
+
+    return rows
+      .filter(row => row.get('tournament_id') === tournamentId)
+      .map(row => ({
+        participantId: row.get('participant_id'),
+        tournamentId: row.get('tournament_id'),
+        teamName: row.get('team_name'),
+        playerName: row.get('player_name'),
+        email: row.get('email'),
+        phone: row.get('phone'),
+        paymentStatus: row.get('payment_status') as 'unpaid' | 'paid' | 'refunded' | 'exempted',
+        paymentMethod: row.get('payment_method') || undefined,
+        paymentDate: row.get('payment_date') || undefined,
+        paymentAmount: parseFloat(row.get('payment_amount') || '0'),
+        registrationDate: row.get('registration_date'),
+        notes: row.get('notes') || undefined,
+      }));
+  } catch (error) {
+    console.error('Error fetching participants:', error);
+    return [];
+  }
+}
+
+export async function createParticipant(
+  tournamentId: string,
+  participantData: Omit<Participant, 'participantId' | 'tournamentId'>
+): Promise<Participant> {
+  const doc = await getSpreadsheet();
+  const sheet = doc.sheetsByTitle['Participants'];
+  if (!sheet) {
+    throw new Error('Participants sheet not found');
+  }
+
+  const rows = await sheet.getRows();
+
+  // 既存の参加者IDを取得
+  const participantIds = rows
+    .map(row => {
+      const id = row.get('participant_id');
+      if (id && id.startsWith('PART')) {
+        return parseInt(id.substring(4));
+      }
+      return 0;
+    })
+    .filter(id => !isNaN(id));
+
+  // 新しい参加者IDを生成
+  const maxId = participantIds.length > 0 ? Math.max(...participantIds) : 0;
+  const newParticipantId = `PART${String(maxId + 1).padStart(3, '0')}`;
+
+  // 新しい行を追加
+  await sheet.addRow({
+    participant_id: newParticipantId,
+    tournament_id: tournamentId,
+    team_name: participantData.teamName,
+    player_name: participantData.playerName,
+    email: participantData.email,
+    phone: participantData.phone,
+    payment_status: participantData.paymentStatus,
+    payment_method: participantData.paymentMethod || '',
+    payment_date: participantData.paymentDate || '',
+    payment_amount: participantData.paymentAmount,
+    registration_date: participantData.registrationDate,
+    notes: participantData.notes || '',
+  });
+
+  return {
+    participantId: newParticipantId,
+    tournamentId,
+    ...participantData,
+  };
+}
+
+export async function updateParticipant(
+  tournamentId: string,
+  participantId: string,
+  participantData: Partial<Omit<Participant, 'participantId' | 'tournamentId'>>
+): Promise<void> {
+  const doc = await getSpreadsheet();
+  const sheet = doc.sheetsByTitle['Participants'];
+  if (!sheet) {
+    throw new Error('Participants sheet not found');
+  }
+
+  const rows = await sheet.getRows();
+  const row = rows.find(
+    r => r.get('participant_id') === participantId && r.get('tournament_id') === tournamentId
+  );
+
+  if (!row) {
+    throw new Error('Participant not found');
+  }
+
+  // 更新するフィールド
+  if (participantData.teamName !== undefined) row.set('team_name', participantData.teamName);
+  if (participantData.playerName !== undefined) row.set('player_name', participantData.playerName);
+  if (participantData.email !== undefined) row.set('email', participantData.email);
+  if (participantData.phone !== undefined) row.set('phone', participantData.phone);
+  if (participantData.paymentStatus !== undefined) row.set('payment_status', participantData.paymentStatus);
+  if (participantData.paymentMethod !== undefined) row.set('payment_method', participantData.paymentMethod);
+  if (participantData.paymentDate !== undefined) row.set('payment_date', participantData.paymentDate);
+  if (participantData.paymentAmount !== undefined) row.set('payment_amount', participantData.paymentAmount);
+  if (participantData.notes !== undefined) row.set('notes', participantData.notes);
+
+  await row.save();
+}
+
+export async function deleteParticipant(tournamentId: string, participantId: string): Promise<void> {
+  const doc = await getSpreadsheet();
+  const sheet = doc.sheetsByTitle['Participants'];
+  if (!sheet) {
+    throw new Error('Participants sheet not found');
+  }
+
+  const rows = await sheet.getRows();
+  const row = rows.find(
+    r => r.get('participant_id') === participantId && r.get('tournament_id') === tournamentId
+  );
+
+  if (!row) {
+    throw new Error('Participant not found');
+  }
+
+  await row.delete();
+}
+
+export async function getPaymentSummary(tournamentId: string): Promise<PaymentSummary> {
+  try {
+    const participants = await getParticipants(tournamentId);
+
+    const totalParticipants = participants.length;
+    const paidCount = participants.filter(p => p.paymentStatus === 'paid').length;
+    const unpaidCount = participants.filter(p => p.paymentStatus === 'unpaid').length;
+    const totalCollected = participants
+      .filter(p => p.paymentStatus === 'paid')
+      .reduce((sum, p) => sum + p.paymentAmount, 0);
+    const totalExpected = participants
+      .filter(p => p.paymentStatus !== 'exempted' && p.paymentStatus !== 'refunded')
+      .reduce((sum, p) => sum + p.paymentAmount, 0);
+    const collectionRate = totalExpected > 0 ? totalCollected / totalExpected : 0;
+
+    return {
+      tournamentId,
+      totalParticipants,
+      paidCount,
+      unpaidCount,
+      totalCollected,
+      totalExpected,
+      collectionRate,
+    };
+  } catch (error) {
+    console.error('Error calculating payment summary:', error);
+    throw error;
   }
 }
