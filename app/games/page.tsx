@@ -11,42 +11,56 @@ export default function GamesPage() {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'league' | 'tournament'>('all');
   const [tournamentId, setTournamentId] = useState<string | null>(null);
+  const [liveMode, setLiveMode] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
+
+  async function fetchData() {
+    try {
+      const searchParams = new URLSearchParams(window.location.search);
+      const tid = searchParams.get('tournamentId');
+      if (!tournamentId) setTournamentId(tid);
+      const params = tid ? `?tournamentId=${tid}` : '';
+
+      // 試合情報を取得
+      const gamesRes = await fetch(`/api/games${params}`);
+      if (!gamesRes.ok) throw new Error('試合情報の取得に失敗しました');
+      const gamesData = await gamesRes.json();
+
+      // チーム情報を取得
+      const teamsRes = await fetch(`/api/teams${params}`);
+      if (!teamsRes.ok) throw new Error('チーム情報の取得に失敗しました');
+      const teamsData = await teamsRes.json();
+
+      // チームIDとチーム名のマッピングを作成
+      const teamMap: { [teamId: string]: string } = {};
+      teamsData.forEach((team: any) => {
+        teamMap[team.teamId] = team.teamName;
+      });
+
+      setGames(gamesData);
+      setTeams(teamMap);
+      setLoading(false);
+      setLastUpdate(new Date());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '不明なエラー');
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    async function fetchData() {
-      try {
-        const searchParams = new URLSearchParams(window.location.search);
-        const tid = searchParams.get('tournamentId');
-        setTournamentId(tid);
-        const params = tid ? `?tournamentId=${tid}` : '';
-
-        // 試合情報を取得
-        const gamesRes = await fetch(`/api/games${params}`);
-        if (!gamesRes.ok) throw new Error('試合情報の取得に失敗しました');
-        const gamesData = await gamesRes.json();
-
-        // チーム情報を取得
-        const teamsRes = await fetch(`/api/teams${params}`);
-        if (!teamsRes.ok) throw new Error('チーム情報の取得に失敗しました');
-        const teamsData = await teamsRes.json();
-
-        // チームIDとチーム名のマッピングを作成
-        const teamMap: { [teamId: string]: string } = {};
-        teamsData.forEach((team: any) => {
-          teamMap[team.teamId] = team.teamName;
-        });
-
-        setGames(gamesData);
-        setTeams(teamMap);
-        setLoading(false);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : '不明なエラー');
-        setLoading(false);
-      }
-    }
-
     fetchData();
   }, []);
+
+  // ライブモード: 30秒ごとに自動リロード
+  useEffect(() => {
+    if (!liveMode) return;
+
+    const interval = setInterval(() => {
+      fetchData();
+    }, 30000); // 30秒
+
+    return () => clearInterval(interval);
+  }, [liveMode, tournamentId]);
 
   const backLink = tournamentId ? `/admin/tournament/${tournamentId}` : '/schedule';
   const backText = tournamentId ? '← ダッシュボードに戻る' : '← スケジュールに戻る';
@@ -119,7 +133,34 @@ export default function GamesPage() {
           </Link>
         </div>
 
-        <h1 className="text-4xl font-bold mb-8 text-primary">試合結果</h1>
+        <div className="flex items-center justify-between mb-8">
+          <h1 className="text-4xl font-bold text-primary">試合結果</h1>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setLiveMode(!liveMode)}
+              className={`px-4 py-2 rounded flex items-center gap-2 ${
+                liveMode
+                  ? 'bg-green-500 text-white'
+                  : 'bg-white text-gray-700 hover:bg-gray-100 border'
+              }`}
+            >
+              {liveMode && <span className="w-2 h-2 bg-white rounded-full animate-pulse"></span>}
+              {liveMode ? 'ライブ更新中' : 'ライブモード開始'}
+            </button>
+            <button
+              onClick={() => fetchData()}
+              className="px-4 py-2 bg-white text-gray-700 rounded hover:bg-gray-100 border"
+            >
+              手動更新
+            </button>
+          </div>
+        </div>
+
+        {liveMode && (
+          <div className="mb-4 text-sm text-gray-500">
+            最終更新: {lastUpdate.toLocaleTimeString('ja-JP')} (30秒ごとに自動更新)
+          </div>
+        )}
 
         {/* フィルター */}
         <div className="mb-6 flex gap-2">
@@ -162,49 +203,54 @@ export default function GamesPage() {
         ) : (
           <div className="space-y-4">
             {filteredGames.map(game => (
-              <div key={game.gameId} className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-gray-500">
-                      {game.gameType === 'league' ? 'リーグ戦' : 'トーナメント'}
-                      {game.block && ` - ブロック${game.block}`}
-                      {game.round && ` - ${game.round}`}
-                    </span>
+              <Link key={game.gameId} href={`/game/${game.gameId}`}>
+                <div className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow cursor-pointer">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-gray-500">
+                        {game.gameType === 'league' ? 'リーグ戦' : 'トーナメント'}
+                        {game.block && ` - ブロック${game.block}`}
+                        {game.round && ` - ${game.round}`}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {getStatusBadge(game.status)}
+                      <span className="text-xs text-gray-400">→ 詳細</span>
+                    </div>
                   </div>
-                  {getStatusBadge(game.status)}
+
+                  <div className="grid grid-cols-7 items-center gap-4">
+                    {/* ホームチーム */}
+                    <div className="col-span-3 text-right">
+                      <div className="font-semibold text-lg">{teams[game.teamHomeId] || game.teamHomeId}</div>
+                    </div>
+
+                    {/* スコア */}
+                    <div className="col-span-1 text-center">
+                      {game.status === 'completed' || game.status === 'in_progress' ? (
+                        <div className="text-2xl font-bold">
+                          {game.scoreHome} - {game.scoreAway}
+                        </div>
+                      ) : (
+                        <div className="text-gray-400">vs</div>
+                      )}
+                    </div>
+
+                    {/* アウェイチーム */}
+                    <div className="col-span-3 text-left">
+                      <div className="font-semibold text-lg">{teams[game.teamAwayId] || game.teamAwayId}</div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 pt-4 border-t border-gray-200 flex justify-between text-sm text-gray-500">
+                    <div>
+                      {game.scheduledDate} {game.scheduledTime}
+                      {game.groundNumber && ` - グラウンド${game.groundNumber}`}
+                    </div>
+                    {game.recorder && <div>記録: {game.recorder}</div>}
+                  </div>
                 </div>
-
-                <div className="grid grid-cols-7 items-center gap-4">
-                  {/* ホームチーム */}
-                  <div className="col-span-3 text-right">
-                    <div className="font-semibold text-lg">{teams[game.teamHomeId] || game.teamHomeId}</div>
-                  </div>
-
-                  {/* スコア */}
-                  <div className="col-span-1 text-center">
-                    {game.status === 'completed' ? (
-                      <div className="text-2xl font-bold">
-                        {game.scoreHome} - {game.scoreAway}
-                      </div>
-                    ) : (
-                      <div className="text-gray-400">vs</div>
-                    )}
-                  </div>
-
-                  {/* アウェイチーム */}
-                  <div className="col-span-3 text-left">
-                    <div className="font-semibold text-lg">{teams[game.teamAwayId] || game.teamAwayId}</div>
-                  </div>
-                </div>
-
-                <div className="mt-4 pt-4 border-t border-gray-200 flex justify-between text-sm text-gray-500">
-                  <div>
-                    {game.scheduledDate} {game.scheduledTime}
-                    {game.groundNumber && ` - グラウンド${game.groundNumber}`}
-                  </div>
-                  {game.recorder && <div>記録: {game.recorder}</div>}
-                </div>
-              </div>
+              </Link>
             ))}
           </div>
         )}

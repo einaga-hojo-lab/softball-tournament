@@ -276,13 +276,13 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* 大会一覧 */}
-        <div className="bg-white rounded-lg shadow-md overflow-hidden">
+        {/* アクティブな大会一覧 */}
+        <div className="bg-white rounded-lg shadow-md overflow-hidden mb-8">
           <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
-            <h2 className="text-xl font-bold text-primary">大会一覧</h2>
+            <h2 className="text-xl font-bold text-primary">アクティブな大会</h2>
           </div>
 
-          {tournaments.length === 0 ? (
+          {tournaments.filter(t => !t.archived).length === 0 ? (
             <div className="p-8 text-center text-gray-600">
               <p className="mb-4">大会が登録されていません</p>
               <button
@@ -294,7 +294,7 @@ export default function AdminPage() {
             </div>
           ) : (
             <div className="divide-y divide-gray-200">
-              {tournaments.map((tournament) => (
+              {tournaments.filter(t => !t.archived).map((tournament) => (
                 <div key={tournament.tournamentId} className="p-6 hover:bg-gray-50 transition-colors">
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
@@ -377,6 +377,55 @@ export default function AdminPage() {
             </div>
           )}
         </div>
+
+        {/* アーカイブ済み大会一覧 */}
+        {tournaments.filter(t => t.archived).length > 0 && (
+          <div className="bg-white rounded-lg shadow-md overflow-hidden mb-8">
+            <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
+              <h2 className="text-xl font-bold text-gray-600">アーカイブ済み大会</h2>
+            </div>
+            <div className="divide-y divide-gray-200">
+              {tournaments.filter(t => t.archived).map((tournament) => (
+                <div key={tournament.tournamentId} className="p-6 hover:bg-gray-50 transition-colors bg-gray-50">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-2">
+                        <h3 className="text-xl font-semibold text-gray-900">
+                          {tournament.tournamentName}
+                        </h3>
+                        {getStatusBadge(tournament.status)}
+                        <span className="px-3 py-1 bg-gray-600 text-white text-sm rounded-full">アーカイブ済み</span>
+                      </div>
+                      <div className="flex flex-wrap gap-4 text-sm text-gray-600 mb-3">
+                        <div className="flex items-center gap-1">
+                          <span className="font-medium">ID:</span>
+                          <span>{tournament.tournamentId}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="font-medium">開催日:</span>
+                          <span>{tournament.tournamentDate}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="font-medium">作成日:</span>
+                          <span>{new Date(tournament.createdAt).toLocaleDateString('ja-JP')}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => router.push(`/admin/tournament/${tournament.tournamentId}`)}
+                          className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-opacity-90 transition-colors"
+                        >
+                          閲覧する →
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* 注意事項 */}
         <div className="mt-8 bg-yellow-50 border border-yellow-200 rounded-lg p-4">

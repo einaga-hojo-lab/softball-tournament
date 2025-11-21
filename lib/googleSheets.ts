@@ -1,6 +1,6 @@
 import { GoogleSpreadsheet } from 'google-spreadsheet';
 import { JWT } from 'google-auth-library';
-import { Game, Team, Player, Tournament, LeagueStanding, PlayerStats, TeamStats, Participant, PaymentSummary, TournamentBracket } from './types';
+import { Game, Team, Player, Tournament, LeagueStanding, PlayerStats, TeamStats, Participant, PaymentSummary, TournamentBracket, Inning, AtBat, AtBatResult } from './types';
 
 // Google Sheetsドキュメントの取得
 export async function getSpreadsheet() {
@@ -1395,8 +1395,7 @@ export async function generateTournamentBracket(
       slots[i] = { teamId: 'BYE', teamName: '不戦勝' };
     }
 
-    // トーナメント表を生成（1回戦）
-    const firstRoundMatches = bracketSize / 2;
+    // トーナメント表を生成（全ラウンドの枠を作成）
     const brackets: TournamentBracket[] = [];
     const gameRows = await gamesSheet.getRows();
 
@@ -1413,7 +1412,28 @@ export async function generateTournamentBracket(
 
     let maxGameId = gameIds.length > 0 ? Math.max(...gameIds) : 0;
 
-    // 1回戦の試合を作成
+    // ラウンド構造を計算
+    const rounds = Math.log2(bracketSize);
+    const roundNames: string[] = [];
+
+    if (rounds === 1) {
+      roundNames.push('決勝');
+    } else if (rounds === 2) {
+      roundNames.push('準決勝', '決勝');
+    } else if (rounds === 3) {
+      roundNames.push('準々決勝', '準決勝', '決勝');
+    } else if (rounds === 4) {
+      roundNames.push('2回戦', '準々決勝', '準決勝', '決勝');
+    } else if (rounds >= 5) {
+      roundNames.push('1回戦');
+      for (let i = 2; i < rounds - 2; i++) {
+        roundNames.push(`${i}回戦`);
+      }
+      roundNames.push('準々決勝', '準決勝', '決勝');
+    }
+
+    // 1回戦の試合を作成（実チーム配置）
+    const firstRoundMatches = bracketSize / 2;
     for (let i = 0; i < firstRoundMatches; i++) {
       const team1 = slots[i * 2];
       const team2 = slots[i * 2 + 1];
@@ -1434,7 +1454,7 @@ export async function generateTournamentBracket(
         game_id: gameId,
         tournament_id: tournamentId,
         game_type: 'tournament',
-        round: '1回戦',
+        round: roundNames[0],
         team_home_id: team1.teamId,
         team_away_id: team2.teamId,
         scheduled_date: '',
@@ -1448,7 +1468,7 @@ export async function generateTournamentBracket(
 
       brackets.push({
         tournamentId,
-        round: '1回戦',
+        round: roundNames[0],
         matchNumber: i + 1,
         team1Id: team1.teamId,
         team2Id: team2.teamId,
@@ -1456,6 +1476,74 @@ export async function generateTournamentBracket(
         winnerId: isByeMatch ? (team1.teamId === 'BYE' ? team2.teamId : team1.teamId) : undefined,
         score1: scoreHome,
         score2: scoreAway,
+      });
+    }
+
+    // 2回戦以降の枠を作成（TBD）
+    let currentRoundMatches = firstRoundMatches;
+    for (let roundIndex = 1; roundIndex < roundNames.length; roundIndex++) {
+      currentRoundMatches = currentRoundMatches / 2;
+      const roundName = roundNames[roundIndex];
+
+      for (let i = 0; i < currentRoundMatches; i++) {
+        maxGameId++;
+        const gameId = `GAME${String(maxGameId).padStart(3, '0')}`;
+
+        await gamesSheet.addRow({
+          game_id: gameId,
+          tournament_id: tournamentId,
+          game_type: 'tournament',
+          round: roundName,
+          team_home_id: 'TBD',
+          team_away_id: 'TBD',
+          scheduled_date: '',
+          scheduled_time: '',
+          field: '',
+          status: 'scheduled',
+          score_home: 0,
+          score_away: 0,
+          recorder: '',
+        });
+
+        brackets.push({
+          tournamentId,
+          round: roundName,
+          matchNumber: i + 1,
+          team1Id: 'TBD',
+          team2Id: 'TBD',
+          gameId,
+        });
+      }
+    }
+
+    // 3位決定戦を作成（準決勝が2試合ある場合のみ）
+    if (bracketSize >= 4) {
+      maxGameId++;
+      const gameId = `GAME${String(maxGameId).padStart(3, '0')}`;
+
+      await gamesSheet.addRow({
+        game_id: gameId,
+        tournament_id: tournamentId,
+        game_type: 'tournament',
+        round: '3位決定戦',
+        team_home_id: 'TBD',
+        team_away_id: 'TBD',
+        scheduled_date: '',
+        scheduled_time: '',
+        field: '',
+        status: 'scheduled',
+        score_home: 0,
+        score_away: 0,
+        recorder: '',
+      });
+
+      brackets.push({
+        tournamentId,
+        round: '3位決定戦',
+        matchNumber: 1,
+        team1Id: 'TBD',
+        team2Id: 'TBD',
+        gameId,
       });
     }
 
@@ -1523,6 +1611,202 @@ export async function getTournamentBracket(tournamentId: string): Promise<Tourna
   }
 }
 
+// ===== イニング管理 =====
+
+export async function getInnings(gameId: string): Promise<Inning[]> {
+  try {
+    const doc = await getSpreadsheet();
+    const inningsSheet = doc.sheetsByTitle['Innings'];
+    if (!inningsSheet) {
+      console.error('Innings sheet not found');
+      return [];
+    }
+
+    const rows = await inningsSheet.getRows();
+    return rows
+      .filter(row => row.get('game_id') === gameId)
+      .map(row => ({
+        gameId: row.get('game_id'),
+        inning: parseInt(row.get('inning')),
+        homeScore: parseInt(row.get('home_score') || '0'),
+        awayScore: parseInt(row.get('away_score') || '0'),
+      }))
+      .sort((a, b) => a.inning - b.inning);
+  } catch (error) {
+    console.error('Error fetching innings:', error);
+    return [];
+  }
+}
+
+export async function updateInning(inning: Inning): Promise<void> {
+  try {
+    const doc = await getSpreadsheet();
+    const inningsSheet = doc.sheetsByTitle['Innings'];
+    if (!inningsSheet) {
+      throw new Error('Innings sheet not found');
+    }
+
+    const rows = await inningsSheet.getRows();
+    const existingRow = rows.find(
+      row => row.get('game_id') === inning.gameId && parseInt(row.get('inning')) === inning.inning
+    );
+
+    if (existingRow) {
+      existingRow.set('home_score', inning.homeScore);
+      existingRow.set('away_score', inning.awayScore);
+      await existingRow.save();
+    } else {
+      await inningsSheet.addRow({
+        game_id: inning.gameId,
+        inning: inning.inning,
+        home_score: inning.homeScore,
+        away_score: inning.awayScore,
+      });
+    }
+
+    // 試合の合計スコアを更新
+    const innings = await getInnings(inning.gameId);
+    const totalHomeScore = innings.reduce((sum, inn) => sum + inn.homeScore, 0);
+    const totalAwayScore = innings.reduce((sum, inn) => sum + inn.awayScore, 0);
+
+    const gamesSheet = doc.sheetsByTitle['Games'];
+    if (gamesSheet) {
+      const gameRows = await gamesSheet.getRows();
+      const gameRow = gameRows.find(row => row.get('game_id') === inning.gameId);
+      if (gameRow) {
+        gameRow.set('score_home', totalHomeScore);
+        gameRow.set('score_away', totalAwayScore);
+        await gameRow.save();
+      }
+    }
+  } catch (error) {
+    console.error('Error updating inning:', error);
+    throw error;
+  }
+}
+
+export async function deleteInning(gameId: string, inningNumber: number): Promise<void> {
+  try {
+    const doc = await getSpreadsheet();
+    const inningsSheet = doc.sheetsByTitle['Innings'];
+    if (!inningsSheet) {
+      throw new Error('Innings sheet not found');
+    }
+
+    const rows = await inningsSheet.getRows();
+    const rowToDelete = rows.find(
+      row => row.get('game_id') === gameId && parseInt(row.get('inning')) === inningNumber
+    );
+
+    if (rowToDelete) {
+      await rowToDelete.delete();
+
+      // 試合の合計スコアを更新
+      const innings = await getInnings(gameId);
+      const totalHomeScore = innings.reduce((sum, inn) => sum + inn.homeScore, 0);
+      const totalAwayScore = innings.reduce((sum, inn) => sum + inn.awayScore, 0);
+
+      const gamesSheet = doc.sheetsByTitle['Games'];
+      if (gamesSheet) {
+        const gameRows = await gamesSheet.getRows();
+        const gameRow = gameRows.find(row => row.get('game_id') === gameId);
+        if (gameRow) {
+          gameRow.set('score_home', totalHomeScore);
+          gameRow.set('score_away', totalAwayScore);
+          await gameRow.save();
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error deleting inning:', error);
+    throw error;
+  }
+}
+
+// ===== 打席記録管理 =====
+
+export async function getAtBats(gameId: string): Promise<AtBat[]> {
+  try {
+    const doc = await getSpreadsheet();
+    const atBatsSheet = doc.sheetsByTitle['AtBats'];
+    if (!atBatsSheet) {
+      console.error('AtBats sheet not found');
+      return [];
+    }
+
+    const rows = await atBatsSheet.getRows();
+    return rows
+      .filter(row => row.get('game_id') === gameId)
+      .map(row => ({
+        gameId: row.get('game_id'),
+        inning: parseInt(row.get('inning')),
+        teamId: row.get('team_id'),
+        playerId: row.get('player_id'),
+        battingOrder: parseInt(row.get('batting_order')),
+        result: row.get('result') as AtBatResult,
+        bases: parseInt(row.get('bases') || '0'),
+        isHomerun: row.get('is_homerun') === 'TRUE' || row.get('is_homerun') === true,
+        rbi: parseInt(row.get('rbi') || '0'),
+        notes: row.get('notes') || undefined,
+      }))
+      .sort((a, b) => a.inning - b.inning || a.battingOrder - b.battingOrder);
+  } catch (error) {
+    console.error('Error fetching at-bats:', error);
+    return [];
+  }
+}
+
+export async function addAtBat(atBat: AtBat): Promise<void> {
+  try {
+    const doc = await getSpreadsheet();
+    const atBatsSheet = doc.sheetsByTitle['AtBats'];
+    if (!atBatsSheet) {
+      throw new Error('AtBats sheet not found');
+    }
+
+    await atBatsSheet.addRow({
+      game_id: atBat.gameId,
+      inning: atBat.inning,
+      team_id: atBat.teamId,
+      player_id: atBat.playerId,
+      batting_order: atBat.battingOrder,
+      result: atBat.result,
+      bases: atBat.bases,
+      is_homerun: atBat.isHomerun,
+      rbi: atBat.rbi,
+      notes: atBat.notes || '',
+    });
+  } catch (error) {
+    console.error('Error adding at-bat:', error);
+    throw error;
+  }
+}
+
+export async function deleteAtBat(gameId: string, inning: number, playerId: string): Promise<void> {
+  try {
+    const doc = await getSpreadsheet();
+    const atBatsSheet = doc.sheetsByTitle['AtBats'];
+    if (!atBatsSheet) {
+      throw new Error('AtBats sheet not found');
+    }
+
+    const rows = await atBatsSheet.getRows();
+    const rowsToDelete = rows.filter(
+      row =>
+        row.get('game_id') === gameId &&
+        parseInt(row.get('inning')) === inning &&
+        row.get('player_id') === playerId
+    );
+
+    for (const row of rowsToDelete) {
+      await row.delete();
+    }
+  } catch (error) {
+    console.error('Error deleting at-bat:', error);
+    throw error;
+  }
+}
+
 export async function advanceTournamentWinner(
   tournamentId: string,
   completedGameId: string,
@@ -1544,6 +1828,9 @@ export async function advanceTournamentWinner(
     }
 
     const currentRound = completedGame.get('round');
+    const homeTeamId = completedGame.get('team_home_id');
+    const awayTeamId = completedGame.get('team_away_id');
+    const loserId = homeTeamId === winnerId ? awayTeamId : homeTeamId;
 
     // 次のラウンドを決定
     const roundProgression: { [key: string]: string } = {
@@ -1557,6 +1844,30 @@ export async function advanceTournamentWinner(
     if (!nextRound) {
       // 決勝戦なので進出先なし
       return;
+    }
+
+    // 準決勝の場合は敗者を3位決定戦に進める
+    if (currentRound === '準決勝') {
+      const thirdPlaceGame = rows.find(
+        row => row.get('tournament_id') === tournamentId && row.get('round') === '3位決定戦'
+      );
+
+      if (thirdPlaceGame) {
+        const currentRoundGames = rows
+          .filter(row => row.get('tournament_id') === tournamentId && row.get('round') === currentRound)
+          .sort((a, b) => a.get('game_id').localeCompare(b.get('game_id')));
+
+        const matchIndex = currentRoundGames.findIndex(row => row.get('game_id') === completedGameId);
+
+        // 最初の準決勝の敗者をホーム、2番目の準決勝の敗者をアウェイに
+        if (matchIndex === 0) {
+          thirdPlaceGame.set('team_home_id', loserId);
+        } else if (matchIndex === 1) {
+          thirdPlaceGame.set('team_away_id', loserId);
+        }
+
+        await thirdPlaceGame.save();
+      }
     }
 
     // 現在のラウンドの試合を取得して番号を計算

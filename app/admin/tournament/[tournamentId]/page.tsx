@@ -67,7 +67,9 @@ export default function TournamentDashboardPage() {
     playerName: "",
     uniformNumber: 0,
     position: "",
+    participantId: "",
   });
+  const [participants, setParticipants] = useState<any[]>([]);
 
   useEffect(() => {
     async function fetchDashboardData() {
@@ -89,6 +91,10 @@ export default function TournamentDashboardPage() {
         const playersRes = await fetch(`/api/players?tournamentId=${tournamentId}`);
         const players = await playersRes.json();
 
+        // 参加者情報を取得
+        const participantsRes = await fetch(`/api/admin/participants?tournamentId=${tournamentId}`);
+        const participants = await participantsRes.json();
+
         // 個人成績を取得（参加者数のカウント用）
         const statsRes = await fetch(`/api/stats?tournamentId=${tournamentId}`);
         const playerStats = await statsRes.json();
@@ -109,6 +115,7 @@ export default function TournamentDashboardPage() {
         setTeams(teams);
         setGames(games);
         setPlayers(players);
+        setParticipants(participants);
         setLoading(false);
       } catch (err) {
         setError(err instanceof Error ? err.message : '不明なエラー');
@@ -414,25 +421,27 @@ export default function TournamentDashboardPage() {
     }
   }
 
-  function openEditPlayerForm(player: Player) {
-    setEditingPlayer(player);
-    setPlayerFormData({
-      teamId: player.teamId,
-      playerName: player.playerName,
-      uniformNumber: player.uniformNumber,
-      position: player.position || "",
-    });
-    setShowPlayerForm(true);
-  }
-
   function resetPlayerForm() {
     setPlayerFormData({
       teamId: "",
       playerName: "",
       uniformNumber: 0,
       position: "",
+      participantId: "",
     });
     setEditingPlayer(null);
+  }
+
+  function openPlayerEditForm(player: Player) {
+    setPlayerFormData({
+      teamId: player.teamId,
+      playerName: player.playerName,
+      uniformNumber: player.uniformNumber,
+      position: player.position,
+      participantId: player.participantId || "",
+    });
+    setEditingPlayer(player);
+    setShowPlayerForm(true);
   }
 
   if (loading) {
@@ -480,12 +489,47 @@ export default function TournamentDashboardPage() {
           </Link>
         </div>
 
-        <h1 className="text-4xl font-bold mb-2 text-accent">
-          大会ダッシュボード
-        </h1>
-        <p className="text-gray-600 mb-8">
-          {stats.tournament.tournamentName} - 大会運営・管理機能
-        </p>
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-4xl font-bold mb-2 text-accent">
+              大会ダッシュボード
+            </h1>
+            <p className="text-gray-600">
+              {stats.tournament.tournamentName} - 大会運営・管理機能
+            </p>
+            {stats.tournament.archived && (
+              <span className="inline-block mt-2 px-3 py-1 bg-gray-500 text-white text-sm rounded">
+                アーカイブ済み
+              </span>
+            )}
+          </div>
+          {!stats.tournament.archived && (
+            <button
+              onClick={async () => {
+                if (!confirm('この大会をアーカイブしますか？\nアーカイブ後も閲覧は可能ですが、編集はできなくなります。'))
+                  return;
+
+                try {
+                  const res = await fetch(`/api/admin/tournaments/${tournamentId}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ archived: true }),
+                  });
+
+                  if (!res.ok) throw new Error('アーカイブに失敗しました');
+
+                  alert('大会をアーカイブしました');
+                  window.location.reload();
+                } catch (err) {
+                  alert(err instanceof Error ? err.message : 'アーカイブに失敗しました');
+                }
+              }}
+              className="px-6 py-2 bg-gray-600 text-white rounded hover:bg-gray-700"
+            >
+              大会をアーカイブ
+            </button>
+          )}
+        </div>
 
         {/* 概要統計 */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
@@ -1315,6 +1359,24 @@ export default function TournamentDashboardPage() {
                       placeholder="例: 投手、外野手"
                     />
                   </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      参加者紐付け（オプション）
+                    </label>
+                    <select
+                      value={playerFormData.participantId}
+                      onChange={(e) => setPlayerFormData({ ...playerFormData, participantId: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                    >
+                      <option value="">紐付けなし</option>
+                      {participants.map(p => (
+                        <option key={p.participantId} value={p.participantId}>
+                          {p.playerName} - {p.teamName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
                 <div className="flex justify-end gap-4 pt-4">
@@ -1364,6 +1426,7 @@ export default function TournamentDashboardPage() {
                       <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">チーム</th>
                       <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700">背番号</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">ポジション</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">参加者</th>
                       <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700">操作</th>
                     </tr>
                   </thead>
@@ -1384,10 +1447,15 @@ export default function TournamentDashboardPage() {
                           </span>
                         </td>
                         <td className="px-4 py-3 text-sm">{player.position || '-'}</td>
+                        <td className="px-4 py-3 text-sm">
+                          {player.participantId
+                            ? participants.find(p => p.participantId === player.participantId)?.playerName || '-'
+                            : '-'}
+                        </td>
                         <td className="px-4 py-3 text-center">
                           <div className="flex justify-center gap-2">
                             <button
-                              onClick={() => openEditPlayerForm(player)}
+                              onClick={() => openPlayerEditForm(player)}
                               className="px-3 py-1 bg-blue-500 text-white text-sm rounded hover:bg-blue-600"
                             >
                               編集
