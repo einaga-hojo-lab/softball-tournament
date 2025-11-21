@@ -803,36 +803,142 @@ export async function deletePlayer(tournamentId: string, playerId: string): Prom
 }
 
 // リーグ順位表を取得
-export async function getLeagueStandings(tournamentId: string): Promise<LeagueStanding[]> {
+// リーグ順位表を試合結果から自動計算
+export async function calculateLeagueStandings(tournamentId: string): Promise<LeagueStanding[]> {
   try {
     const doc = await getSpreadsheet();
-    const sheet = doc.sheetsByTitle['LeagueStandings'];
-    if (!sheet) {
-      console.error('LeagueStandings sheet not found');
+    const gamesSheet = doc.sheetsByTitle['Games'];
+    const teamsSheet = doc.sheetsByTitle['Teams'];
+
+    if (!gamesSheet || !teamsSheet) {
+      console.error('Required sheets not found');
       return [];
     }
 
-    const rows = await sheet.getRows();
+    const games = await gamesSheet.getRows();
+    const teams = await teamsSheet.getRows();
 
-    return rows
-      .filter(row => row.get('tournament_id') === tournamentId)
-      .map(row => ({
-        tournamentId: row.get('tournament_id'),
-        block: row.get('block'),
-        teamId: row.get('team_id'),
-        games: parseInt(row.get('games') || '0'),
-        wins: parseInt(row.get('wins') || '0'),
-        losses: parseInt(row.get('losses') || '0'),
-        draws: parseInt(row.get('draws') || '0'),
-        winRate: parseFloat(row.get('win_rate') || '0'),
-        pointsFor: parseInt(row.get('points_for') || '0'),
-        pointsAgainst: parseInt(row.get('points_against') || '0'),
-        rank: parseInt(row.get('rank') || '0'),
-      }));
+    // リーグ戦の完了した試合のみを対象
+    const completedLeagueGames = games.filter(
+      row =>
+        row.get('tournament_id') === tournamentId &&
+        row.get('game_type') === 'league' &&
+        row.get('status') === 'completed' &&
+        row.get('block') // ブロックが設定されている
+    );
+
+    // ブロック別にチームの統計を計算
+    const standingsMap = new Map<string, Map<string, {
+      teamId: string;
+      block: string;
+      games: number;
+      wins: number;
+      losses: number;
+      draws: number;
+      pointsFor: number;
+      pointsAgainst: number;
+    }>>();
+
+    // チーム情報を取得してマップに追加
+    teams
+      .filter(row => row.get('tournament_id') === tournamentId && row.get('block'))
+      .forEach(team => {
+        const teamId = team.get('team_id');
+        const block = team.get('block');
+
+        if (!standingsMap.has(block)) {
+          standingsMap.set(block, new Map());
+        }
+
+        standingsMap.get(block)!.set(teamId, {
+          teamId,
+          block,
+          games: 0,
+          wins: 0,
+          losses: 0,
+          draws: 0,
+          pointsFor: 0,
+          pointsAgainst: 0,
+        });
+      });
+
+    // 試合結果から統計を計算
+    completedLeagueGames.forEach(game => {
+      const block = game.get('block');
+      const teamHomeId = game.get('team_home_id');
+      const teamAwayId = game.get('team_away_id');
+      const scoreHome = parseInt(game.get('score_home') || '0');
+      const scoreAway = parseInt(game.get('score_away') || '0');
+
+      const blockMap = standingsMap.get(block);
+      if (!blockMap) return;
+
+      const homeStats = blockMap.get(teamHomeId);
+      const awayStats = blockMap.get(teamAwayId);
+
+      if (homeStats) {
+        homeStats.games++;
+        homeStats.pointsFor += scoreHome;
+        homeStats.pointsAgainst += scoreAway;
+
+        if (scoreHome > scoreAway) homeStats.wins++;
+        else if (scoreHome < scoreAway) homeStats.losses++;
+        else homeStats.draws++;
+      }
+
+      if (awayStats) {
+        awayStats.games++;
+        awayStats.pointsFor += scoreAway;
+        awayStats.pointsAgainst += scoreHome;
+
+        if (scoreAway > scoreHome) awayStats.wins++;
+        else if (scoreAway < scoreHome) awayStats.losses++;
+        else awayStats.draws++;
+      }
+    });
+
+    // 最終的な順位表を作成
+    const standings: LeagueStanding[] = [];
+
+    standingsMap.forEach((blockMap, block) => {
+      const blockStandings = Array.from(blockMap.values())
+        .map(stats => ({
+          tournamentId,
+          block,
+          teamId: stats.teamId,
+          games: stats.games,
+          wins: stats.wins,
+          losses: stats.losses,
+          draws: stats.draws,
+          winRate: stats.games > 0 ? stats.wins / stats.games : 0,
+          pointsFor: stats.pointsFor,
+          pointsAgainst: stats.pointsAgainst,
+          rank: 0, // 仮の値、後で設定
+        }))
+        .sort((a, b) => {
+          // 勝率で降順ソート、同率の場合は得失点差
+          if (b.winRate !== a.winRate) return b.winRate - a.winRate;
+          return (b.pointsFor - b.pointsAgainst) - (a.pointsFor - a.pointsAgainst);
+        });
+
+      // 順位を設定
+      blockStandings.forEach((standing, index) => {
+        standing.rank = index + 1;
+      });
+
+      standings.push(...blockStandings);
+    });
+
+    return standings;
   } catch (error) {
-    console.error('Error fetching league standings:', error);
+    console.error('Error calculating league standings:', error);
     return [];
   }
+}
+
+export async function getLeagueStandings(tournamentId: string): Promise<LeagueStanding[]> {
+  // 試合結果から自動計算
+  return await calculateLeagueStandings(tournamentId);
 }
 
 // 個人成績を取得
