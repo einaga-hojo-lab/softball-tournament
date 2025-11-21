@@ -609,11 +609,12 @@ export default function TournamentDashboardPage() {
                 試合記録
               </h3>
               <ul className="space-y-2 text-sm text-gray-600">
-                <li className="p-2 hover:bg-gray-50 rounded cursor-pointer">⚾ 試合結果入力</li>
-                <li className="p-2 hover:bg-gray-50 rounded cursor-pointer">📝 スコア修正</li>
+                <Link href={`/admin/score-entry?tournamentId=${tournamentId}`}>
+                  <li className="p-2 hover:bg-gray-50 rounded cursor-pointer text-primary font-semibold">⚾ スコア入力 →</li>
+                </Link>
+                <li className="p-2 hover:bg-gray-50 rounded cursor-pointer">📝 詳細記録</li>
                 <li className="p-2 hover:bg-gray-50 rounded cursor-pointer">🏆 トーナメント管理</li>
               </ul>
-              <p className="text-xs text-gray-500 mt-4">※ 開発中</p>
             </div>
 
             <div className="bg-white rounded-lg shadow-md p-6">

@@ -434,6 +434,43 @@ export async function deleteGame(tournamentId: string, gameId: string): Promise<
   }
 }
 
+// 試合スコアを更新
+export async function updateGameScore(
+  tournamentId: string,
+  gameId: string,
+  scoreData: {
+    scoreHome: number;
+    scoreAway: number;
+    status: 'scheduled' | 'in_progress' | 'completed' | 'cancelled' | 'postponed';
+  }
+): Promise<void> {
+  try {
+    const doc = await getSpreadsheet();
+    const sheet = doc.sheetsByTitle['Games'];
+    if (!sheet) {
+      throw new Error('Games sheet not found');
+    }
+
+    const rows = await sheet.getRows();
+    const gameRow = rows.find(
+      row => row.get('tournament_id') === tournamentId && row.get('game_id') === gameId
+    );
+
+    if (!gameRow) {
+      throw new Error('Game not found');
+    }
+
+    gameRow.set('score_home', scoreData.scoreHome.toString());
+    gameRow.set('score_away', scoreData.scoreAway.toString());
+    gameRow.set('status', scoreData.status);
+
+    await gameRow.save();
+  } catch (error) {
+    console.error('Error updating game score:', error);
+    throw error;
+  }
+}
+
 // チーム一覧を取得
 export async function getTeams(tournamentId?: string): Promise<Team[]> {
   try {
