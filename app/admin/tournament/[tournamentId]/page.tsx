@@ -627,11 +627,41 @@ export default function TournamentDashboardPage() {
                 <Link href={`/admin/participants?tournamentId=${tournamentId}`}>
                   <li className="p-2 hover:bg-gray-50 rounded cursor-pointer text-primary font-semibold">💰 参加費管理 →</li>
                 </Link>
-                <li className="p-2 hover:bg-gray-50 rounded cursor-pointer">📥 データエクスポート</li>
+              </ul>
+              <div className="mt-4">
+                <p className="text-sm font-semibold text-gray-700 mb-2">📥 データエクスポート（CSV）</p>
+                <div className="flex flex-col gap-2">
+                  <button
+                    onClick={() => window.open(`/api/export/teams?tournamentId=${tournamentId}`, '_blank')}
+                    className="text-left px-3 py-2 text-sm bg-blue-50 hover:bg-blue-100 rounded text-blue-700"
+                  >
+                    チームデータ
+                  </button>
+                  <button
+                    onClick={() => window.open(`/api/export/games?tournamentId=${tournamentId}`, '_blank')}
+                    className="text-left px-3 py-2 text-sm bg-blue-50 hover:bg-blue-100 rounded text-blue-700"
+                  >
+                    試合データ
+                  </button>
+                  <button
+                    onClick={() => window.open(`/api/export/players?tournamentId=${tournamentId}`, '_blank')}
+                    className="text-left px-3 py-2 text-sm bg-blue-50 hover:bg-blue-100 rounded text-blue-700"
+                  >
+                    選手データ
+                  </button>
+                  <button
+                    onClick={() => window.open(`/api/export/participants?tournamentId=${tournamentId}`, '_blank')}
+                    className="text-left px-3 py-2 text-sm bg-blue-50 hover:bg-blue-100 rounded text-blue-700"
+                  >
+                    参加者・参加費データ
+                  </button>
+                </div>
+              </div>
+              <ul className="space-y-2 text-sm text-gray-600 mt-4">
                 <li className="p-2 hover:bg-gray-50 rounded cursor-pointer">💾 バックアップ</li>
                 <li className="p-2 hover:bg-gray-50 rounded cursor-pointer">🗃️ アーカイブ</li>
               </ul>
-              <p className="text-xs text-gray-500 mt-4">※ データエクスポート以降は開発中</p>
+              <p className="text-xs text-gray-500 mt-4">※ バックアップ・アーカイブは開発中</p>
             </div>
 
             <div className="bg-white rounded-lg shadow-md p-6">
