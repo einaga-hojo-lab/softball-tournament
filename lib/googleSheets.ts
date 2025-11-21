@@ -1,6 +1,6 @@
 import { GoogleSpreadsheet } from 'google-spreadsheet';
 import { JWT } from 'google-auth-library';
-import { Game, Team, Player, Tournament, LeagueStanding, PlayerStats, TeamStats, Participant, PaymentSummary } from './types';
+import { Game, Team, Player, Tournament, LeagueStanding, PlayerStats, TeamStats, Participant, PaymentSummary, TournamentBracket } from './types';
 
 // Google Sheetsドキュメントの取得
 export async function getSpreadsheet() {
@@ -1321,5 +1321,212 @@ export async function validateSchedule(tournamentId: string): Promise<ScheduleCo
   } catch (error) {
     console.error('Error validating schedule:', error);
     return [];
+  }
+}
+
+// ===== トーナメント表管理 =====
+
+export async function generateTournamentBracket(
+  tournamentId: string,
+  teamIds: string[],
+  useSeedRanking: boolean = false
+): Promise<TournamentBracket[]> {
+  try {
+    const doc = await getSpreadsheet();
+    const teamsSheet = doc.sheetsByTitle['Teams'];
+    const gamesSheet = doc.sheetsByTitle['Games'];
+
+    if (!teamsSheet || !gamesSheet) {
+      throw new Error('Required sheets not found');
+    }
+
+    // チーム数が2のべき乗かチェック（4, 8, 16, 32...）
+    const validSizes = [4, 8, 16, 32];
+    if (!validSizes.includes(teamIds.length)) {
+      throw new Error(`トーナメントには4, 8, 16, 32チームが必要です（現在: ${teamIds.length}チーム）`);
+    }
+
+    // チーム情報を取得
+    const teamRows = await teamsSheet.getRows();
+    const teams = teamRows
+      .filter(row => teamIds.includes(row.get('team_id')))
+      .map(row => ({
+        teamId: row.get('team_id'),
+        teamName: row.get('team_name'),
+        seedRank: parseInt(row.get('seed_rank') || '999'),
+      }));
+
+    // シード順またはランダムに並べ替え
+    let orderedTeams = [...teams];
+    if (useSeedRanking) {
+      orderedTeams.sort((a, b) => a.seedRank - b.seedRank);
+    } else {
+      // ランダムシャッフル
+      for (let i = orderedTeams.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [orderedTeams[i], orderedTeams[j]] = [orderedTeams[j], orderedTeams[i]];
+      }
+    }
+
+    // トーナメント表を生成（1回戦）
+    const firstRoundMatches = teamIds.length / 2;
+    const brackets: TournamentBracket[] = [];
+    const gameRows = await gamesSheet.getRows();
+
+    // 既存のゲームIDを取得
+    const gameIds = gameRows
+      .map(row => {
+        const id = row.get('game_id');
+        if (id && id.startsWith('GAME')) {
+          return parseInt(id.substring(4));
+        }
+        return 0;
+      })
+      .filter(id => !isNaN(id));
+
+    let maxGameId = gameIds.length > 0 ? Math.max(...gameIds) : 0;
+
+    // 1回戦の試合を作成
+    for (let i = 0; i < firstRoundMatches; i++) {
+      const team1 = orderedTeams[i * 2];
+      const team2 = orderedTeams[i * 2 + 1];
+
+      maxGameId++;
+      const gameId = `GAME${String(maxGameId).padStart(3, '0')}`;
+
+      // Gamesシートに試合を追加
+      await gamesSheet.addRow({
+        game_id: gameId,
+        tournament_id: tournamentId,
+        game_type: 'tournament',
+        round: '1回戦',
+        team_home_id: team1.teamId,
+        team_away_id: team2.teamId,
+        scheduled_date: '',
+        scheduled_time: '',
+        field: '',
+        status: 'scheduled',
+        score_home: 0,
+        score_away: 0,
+        recorder: '',
+      });
+
+      brackets.push({
+        tournamentId,
+        round: '1回戦',
+        matchNumber: i + 1,
+        team1Id: team1.teamId,
+        team2Id: team2.teamId,
+        gameId,
+      });
+    }
+
+    return brackets;
+  } catch (error) {
+    console.error('Error generating tournament bracket:', error);
+    throw error;
+  }
+}
+
+export async function getTournamentBracket(tournamentId: string): Promise<TournamentBracket[]> {
+  try {
+    const doc = await getSpreadsheet();
+    const gamesSheet = doc.sheetsByTitle['Games'];
+    if (!gamesSheet) {
+      console.error('Games sheet not found');
+      return [];
+    }
+
+    const rows = await gamesSheet.getRows();
+    const tournamentGames = rows.filter(
+      row =>
+        row.get('tournament_id') === tournamentId &&
+        row.get('game_type') === 'tournament'
+    );
+
+    // ラウンドの順序を定義
+    const roundOrder: { [key: string]: number } = {
+      '1回戦': 1,
+      '2回戦': 2,
+      '準々決勝': 3,
+      '準決勝': 4,
+      '3位決定戦': 5,
+      '決勝': 6,
+    };
+
+    return tournamentGames
+      .map(row => ({
+        tournamentId: row.get('tournament_id'),
+        round: row.get('round') || '1回戦',
+        matchNumber: 0, // 後でソート順から計算
+        team1Id: row.get('team_home_id'),
+        team2Id: row.get('team_away_id'),
+        winnerId: row.get('status') === 'completed'
+          ? (parseInt(row.get('score_home') || '0') > parseInt(row.get('score_away') || '0')
+            ? row.get('team_home_id')
+            : row.get('team_away_id'))
+          : undefined,
+        score1: parseInt(row.get('score_home') || '0'),
+        score2: parseInt(row.get('score_away') || '0'),
+        gameId: row.get('game_id'),
+      }))
+      .sort((a, b) => {
+        const orderA = roundOrder[a.round] || 0;
+        const orderB = roundOrder[b.round] || 0;
+        return orderA - orderB;
+      })
+      .map((bracket, index) => ({
+        ...bracket,
+        matchNumber: index + 1,
+      }));
+  } catch (error) {
+    console.error('Error fetching tournament bracket:', error);
+    return [];
+  }
+}
+
+export async function advanceTournamentWinner(
+  tournamentId: string,
+  completedGameId: string,
+  winnerId: string
+): Promise<void> {
+  try {
+    const doc = await getSpreadsheet();
+    const gamesSheet = doc.sheetsByTitle['Games'];
+    if (!gamesSheet) {
+      throw new Error('Games sheet not found');
+    }
+
+    const rows = await gamesSheet.getRows();
+
+    // 完了した試合を取得
+    const completedGame = rows.find(row => row.get('game_id') === completedGameId);
+    if (!completedGame) {
+      throw new Error('Completed game not found');
+    }
+
+    const currentRound = completedGame.get('round');
+
+    // 次のラウンドを決定
+    const roundProgression: { [key: string]: string } = {
+      '1回戦': '2回戦',
+      '2回戦': '準々決勝',
+      '準々決勝': '準決勝',
+      '準決勝': '決勝',
+    };
+
+    const nextRound = roundProgression[currentRound];
+    if (!nextRound) {
+      // 決勝戦なので進出先なし
+      return;
+    }
+
+    // 次のラウンドの試合を探して勝者を設定
+    // この部分は実際のトーナメント構造に応じてカスタマイズが必要
+    console.log(`Winner ${winnerId} advances from ${currentRound} to ${nextRound}`);
+
+  } catch (error) {
+    console.error('Error advancing tournament winner:', error);
+    throw error;
   }
 }

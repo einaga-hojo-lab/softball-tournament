@@ -613,7 +613,9 @@ export default function TournamentDashboardPage() {
                   <li className="p-2 hover:bg-gray-50 rounded cursor-pointer text-primary font-semibold">⚾ スコア入力 →</li>
                 </Link>
                 <li className="p-2 hover:bg-gray-50 rounded cursor-pointer">📝 詳細記録</li>
-                <li className="p-2 hover:bg-gray-50 rounded cursor-pointer">🏆 トーナメント管理</li>
+                <Link href={`/tournament-bracket?tournamentId=${tournamentId}`}>
+                  <li className="p-2 hover:bg-gray-50 rounded cursor-pointer text-primary font-semibold">🏆 トーナメント表 →</li>
+                </Link>
               </ul>
             </div>
 
@@ -860,6 +862,87 @@ export default function TournamentDashboardPage() {
                   </tbody>
                 </table>
               </div>
+            )}
+          </div>
+        </div>
+
+        {/* トーナメント生成セクション */}
+        <div className="mb-8">
+          <h2 className="text-2xl font-bold text-primary mb-4">トーナメント表生成</h2>
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <p className="text-gray-600 mb-4">
+              登録されているチームからトーナメント表を自動生成します（4, 8, 16, 32チームに対応）。
+            </p>
+            <div className="flex gap-4">
+              <button
+                onClick={async () => {
+                  if (!confirm(`${teams.length}チームでトーナメント表を生成しますか？\n※既存のトーナメント試合は上書きされません`)) return;
+
+                  try {
+                    const teamIds = teams.map(t => t.teamId);
+                    const res = await fetch('/api/admin/tournament-bracket/generate', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        tournamentId,
+                        teamIds,
+                        useSeedRanking: false,
+                      }),
+                    });
+
+                    if (!res.ok) {
+                      const error = await res.json();
+                      throw new Error(error.error || 'トーナメント表の生成に失敗しました');
+                    }
+
+                    alert('トーナメント表を生成しました！');
+                    window.location.reload();
+                  } catch (err) {
+                    alert(err instanceof Error ? err.message : 'トーナメント表の生成に失敗しました');
+                  }
+                }}
+                disabled={teams.length === 0 || ![4, 8, 16, 32].includes(teams.length)}
+                className="px-6 py-2 bg-primary text-white rounded-lg hover:bg-opacity-90 disabled:bg-gray-300 disabled:cursor-not-allowed"
+              >
+                ランダム生成 ({teams.length}チーム)
+              </button>
+              <button
+                onClick={async () => {
+                  if (!confirm(`${teams.length}チームでトーナメント表を生成しますか？（シード順）\n※既存のトーナメント試合は上書きされません`)) return;
+
+                  try {
+                    const teamIds = teams.map(t => t.teamId);
+                    const res = await fetch('/api/admin/tournament-bracket/generate', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        tournamentId,
+                        teamIds,
+                        useSeedRanking: true,
+                      }),
+                    });
+
+                    if (!res.ok) {
+                      const error = await res.json();
+                      throw new Error(error.error || 'トーナメント表の生成に失敗しました');
+                    }
+
+                    alert('トーナメント表を生成しました！');
+                    window.location.reload();
+                  } catch (err) {
+                    alert(err instanceof Error ? err.message : 'トーナメント表の生成に失敗しました');
+                  }
+                }}
+                disabled={teams.length === 0 || ![4, 8, 16, 32].includes(teams.length)}
+                className="px-6 py-2 bg-accent text-white rounded-lg hover:bg-opacity-90 disabled:bg-gray-300 disabled:cursor-not-allowed"
+              >
+                シード順生成 ({teams.length}チーム)
+              </button>
+            </div>
+            {teams.length > 0 && ![4, 8, 16, 32].includes(teams.length) && (
+              <p className="text-red-600 text-sm mt-2">
+                ※ トーナメント生成には4, 8, 16, 32チームが必要です（現在: {teams.length}チーム）
+              </p>
             )}
           </div>
         </div>
