@@ -3,10 +3,12 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Game } from "@/lib/types";
+import type { ScheduleConflict } from "@/lib/googleSheets";
 
 export default function SchedulePage() {
   const [games, setGames] = useState<Game[]>([]);
   const [teams, setTeams] = useState<{ [teamId: string]: string }>({});
+  const [conflicts, setConflicts] = useState<ScheduleConflict[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -22,15 +24,21 @@ export default function SchedulePage() {
         setTournamentId(tid);
         const params = tid ? `?tournamentId=${tid}` : '';
 
-        // 試合情報を取得
-        const gamesRes = await fetch(`/api/games${params}`);
-        if (!gamesRes.ok) throw new Error('試合情報の取得に失敗しました');
-        const gamesData = await gamesRes.json();
+        // 並列で全データを取得
+        const [gamesRes, teamsRes, conflictsRes] = await Promise.all([
+          fetch(`/api/games${params}`),
+          fetch(`/api/teams${params}`),
+          tid ? fetch(`/api/schedule-validation${params}`) : Promise.resolve(null)
+        ]);
 
-        // チーム情報を取得
-        const teamsRes = await fetch(`/api/teams${params}`);
+        if (!gamesRes.ok) throw new Error('試合情報の取得に失敗しました');
         if (!teamsRes.ok) throw new Error('チーム情報の取得に失敗しました');
-        const teamsData = await teamsRes.json();
+
+        const [gamesData, teamsData, conflictsData] = await Promise.all([
+          gamesRes.json(),
+          teamsRes.json(),
+          conflictsRes ? conflictsRes.json() : Promise.resolve([])
+        ]);
 
         // チームIDとチーム名のマッピングを作成
         const teamMap: { [teamId: string]: string } = {};
@@ -40,6 +48,7 @@ export default function SchedulePage() {
 
         setGames(gamesData);
         setTeams(teamMap);
+        setConflicts(conflictsData);
         setLoading(false);
       } catch (err) {
         setError(err instanceof Error ? err.message : '不明なエラー');
@@ -147,6 +156,33 @@ export default function SchedulePage() {
         <h1 className="text-4xl font-bold mb-8 text-primary">
           試合スケジュール
         </h1>
+
+        {/* スケジュール間違い警告 */}
+        {conflicts.length > 0 && (
+          <div className="mb-6 bg-red-50 border-2 border-red-300 rounded-lg p-6">
+            <h2 className="text-xl font-bold text-red-700 mb-4">
+              ⚠️ スケジュールの間違いが検出されました ({conflicts.length}件)
+            </h2>
+            <div className="space-y-3">
+              {conflicts.map((conflict, index) => (
+                <div key={index} className="bg-white rounded-lg p-4 border-l-4 border-red-500">
+                  <div className="flex items-start gap-2">
+                    <span className="text-red-600 font-bold text-lg">!</span>
+                    <div className="flex-1">
+                      <div className="font-semibold text-red-700 mb-1">
+                        {conflict.type === 'team_overlap' ? 'チーム重複' : '会場重複'}
+                      </div>
+                      <div className="text-sm text-gray-700">{conflict.details}</div>
+                      <div className="text-xs text-gray-500 mt-2">
+                        試合ID: {conflict.gameId1} と {conflict.gameId2}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* フィルター */}
         <div className="mb-6 bg-white rounded-lg shadow-md p-4">

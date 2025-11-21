@@ -1239,3 +1239,87 @@ export async function getPaymentSummary(tournamentId: string): Promise<PaymentSu
     throw error;
   }
 }
+
+// ===== スケジュール検証 =====
+
+export interface ScheduleConflict {
+  type: 'team_overlap' | 'field_overlap';
+  gameId1: string;
+  gameId2: string;
+  details: string;
+}
+
+export async function validateSchedule(tournamentId: string): Promise<ScheduleConflict[]> {
+  try {
+    const doc = await getSpreadsheet();
+    const gamesSheet = doc.sheetsByTitle['Games'];
+    if (!gamesSheet) {
+      console.error('Games sheet not found');
+      return [];
+    }
+
+    const rows = await gamesSheet.getRows();
+    const games = rows
+      .filter(row =>
+        row.get('tournament_id') === tournamentId &&
+        row.get('status') !== 'cancelled' &&
+        row.get('status') !== 'postponed' &&
+        row.get('scheduled_date') &&
+        row.get('scheduled_time')
+      )
+      .map(row => ({
+        gameId: row.get('game_id'),
+        teamHomeId: row.get('team_home_id'),
+        teamAwayId: row.get('team_away_id'),
+        scheduledDate: row.get('scheduled_date'),
+        scheduledTime: row.get('scheduled_time'),
+        field: row.get('field'),
+      }));
+
+    const conflicts: ScheduleConflict[] = [];
+
+    // 全ての試合ペアをチェック
+    for (let i = 0; i < games.length; i++) {
+      for (let j = i + 1; j < games.length; j++) {
+        const game1 = games[i];
+        const game2 = games[j];
+
+        // 同じ日付かチェック
+        if (game1.scheduledDate !== game2.scheduledDate) continue;
+
+        // 時間が重複しているかチェック（簡易版 - 同じ時間のみ）
+        if (game1.scheduledTime === game2.scheduledTime) {
+          // チームの重複をチェック
+          const teams1 = [game1.teamHomeId, game1.teamAwayId];
+          const teams2 = [game2.teamHomeId, game2.teamAwayId];
+          const teamOverlap = teams1.some(t => teams2.includes(t));
+
+          if (teamOverlap) {
+            const overlappingTeams = teams1.filter(t => teams2.includes(t));
+            conflicts.push({
+              type: 'team_overlap',
+              gameId1: game1.gameId,
+              gameId2: game2.gameId,
+              details: `チーム ${overlappingTeams.join(', ')} が ${game1.scheduledDate} ${game1.scheduledTime} に複数の試合に出場予定`,
+            });
+          }
+
+          // 会場の重複をチェック
+          if (game1.field && game2.field && game1.field === game2.field) {
+            conflicts.push({
+              type: 'field_overlap',
+              gameId1: game1.gameId,
+              gameId2: game2.gameId,
+              details: `会場 ${game1.field} が ${game1.scheduledDate} ${game1.scheduledTime} に重複予約`,
+            });
+          }
+        }
+      }
+    }
+
+    return conflicts;
+  } catch (error) {
+    console.error('Error validating schedule:', error);
+    return [];
+  }
+}
