@@ -901,7 +901,7 @@ export default function TournamentDashboardPage() {
           <h2 className="text-2xl font-bold text-primary mb-4">トーナメント表生成</h2>
           <div className="bg-white rounded-lg shadow-md p-6">
             <p className="text-gray-600 mb-4">
-              登録されているチームからトーナメント表を自動生成します（4, 8, 16, 32チームに対応）。
+              登録されているチームからトーナメント表を自動生成します（任意のチーム数に対応、不戦勝を自動配置）。
             </p>
             <div className="flex gap-4">
               <button
@@ -931,7 +931,7 @@ export default function TournamentDashboardPage() {
                     alert(err instanceof Error ? err.message : 'トーナメント表の生成に失敗しました');
                   }
                 }}
-                disabled={teams.length === 0 || ![4, 8, 16, 32].includes(teams.length)}
+                disabled={teams.length < 2}
                 className="px-6 py-2 bg-primary text-white rounded-lg hover:bg-opacity-90 disabled:bg-gray-300 disabled:cursor-not-allowed"
               >
                 ランダム生成 ({teams.length}チーム)
@@ -963,15 +963,15 @@ export default function TournamentDashboardPage() {
                     alert(err instanceof Error ? err.message : 'トーナメント表の生成に失敗しました');
                   }
                 }}
-                disabled={teams.length === 0 || ![4, 8, 16, 32].includes(teams.length)}
+                disabled={teams.length < 2}
                 className="px-6 py-2 bg-accent text-white rounded-lg hover:bg-opacity-90 disabled:bg-gray-300 disabled:cursor-not-allowed"
               >
                 シード順生成 ({teams.length}チーム)
               </button>
             </div>
-            {teams.length > 0 && ![4, 8, 16, 32].includes(teams.length) && (
+            {teams.length === 1 && (
               <p className="text-red-600 text-sm mt-2">
-                ※ トーナメント生成には4, 8, 16, 32チームが必要です（現在: {teams.length}チーム）
+                ※ トーナメント生成には最低2チームが必要です（現在: {teams.length}チーム）
               </p>
             )}
           </div>

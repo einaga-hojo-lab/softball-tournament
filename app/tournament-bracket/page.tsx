@@ -54,6 +54,34 @@ function TournamentBracketContent() {
     }
   }
 
+  async function advanceWinner(gameId: string, winnerId: string) {
+    if (!confirm('この勝者を次のラウンドに進めますか？')) {
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/admin/tournament-bracket/advance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tournamentId,
+          gameId,
+          winnerId,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || '勝者の進行に失敗しました');
+      }
+
+      alert('勝者を次のラウンドに進めました');
+      fetchData(); // データを再取得
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '不明なエラー');
+    }
+  }
+
   const backLink = tournamentId ? `/admin/tournament/${tournamentId}` : '/';
 
   if (loading) {
@@ -175,6 +203,16 @@ function TournamentBracketContent() {
                             <span className="px-3 py-1 bg-green-500 text-white rounded-full">
                               勝者: {teams[match.winnerId]}
                             </span>
+                          </div>
+                        )}
+                        {match.winnerId && round !== '決勝' && (
+                          <div className="mt-3">
+                            <button
+                              onClick={() => advanceWinner(match.gameId, match.winnerId!)}
+                              className="w-full px-4 py-2 bg-primary text-white rounded hover:bg-primary/90 transition-colors"
+                            >
+                              次ラウンドに進める
+                            </button>
                           </div>
                         )}
                       </div>

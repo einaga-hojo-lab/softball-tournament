@@ -1340,11 +1340,19 @@ export async function generateTournamentBracket(
       throw new Error('Required sheets not found');
     }
 
-    // チーム数が2のべき乗かチェック（4, 8, 16, 32...）
-    const validSizes = [4, 8, 16, 32];
-    if (!validSizes.includes(teamIds.length)) {
-      throw new Error(`トーナメントには4, 8, 16, 32チームが必要です（現在: ${teamIds.length}チーム）`);
+    const actualTeamCount = teamIds.length;
+    if (actualTeamCount < 2) {
+      throw new Error(`トーナメントには最低2チームが必要です（現在: ${actualTeamCount}チーム）`);
     }
+
+    // 次の2のべき乗を計算（4, 8, 16, 32...）
+    let bracketSize = 4;
+    while (bracketSize < actualTeamCount) {
+      bracketSize *= 2;
+    }
+
+    // 不戦勝の数を計算
+    const byeCount = bracketSize - actualTeamCount;
 
     // チーム情報を取得
     const teamRows = await teamsSheet.getRows();
@@ -1368,8 +1376,27 @@ export async function generateTournamentBracket(
       }
     }
 
+    // 不戦勝を上位シードに配置する
+    // 実際のトーナメントでは、不戦勝は上位シードに割り当てられる
+    const slots: Array<{ teamId: string; teamName: string } | null> = [];
+
+    // まず全スロットを用意
+    for (let i = 0; i < bracketSize; i++) {
+      slots.push(null);
+    }
+
+    // チームを配置
+    for (let i = 0; i < orderedTeams.length; i++) {
+      slots[i] = orderedTeams[i];
+    }
+
+    // 残りのスロットにBYEを配置
+    for (let i = orderedTeams.length; i < bracketSize; i++) {
+      slots[i] = { teamId: 'BYE', teamName: '不戦勝' };
+    }
+
     // トーナメント表を生成（1回戦）
-    const firstRoundMatches = teamIds.length / 2;
+    const firstRoundMatches = bracketSize / 2;
     const brackets: TournamentBracket[] = [];
     const gameRows = await gamesSheet.getRows();
 
@@ -1388,11 +1415,19 @@ export async function generateTournamentBracket(
 
     // 1回戦の試合を作成
     for (let i = 0; i < firstRoundMatches; i++) {
-      const team1 = orderedTeams[i * 2];
-      const team2 = orderedTeams[i * 2 + 1];
+      const team1 = slots[i * 2];
+      const team2 = slots[i * 2 + 1];
+
+      if (!team1 || !team2) continue;
 
       maxGameId++;
       const gameId = `GAME${String(maxGameId).padStart(3, '0')}`;
+
+      // BYEが含まれる場合は自動的に完了状態にする
+      const isByeMatch = team1.teamId === 'BYE' || team2.teamId === 'BYE';
+      const status = isByeMatch ? 'completed' : 'scheduled';
+      const scoreHome = isByeMatch ? (team1.teamId === 'BYE' ? 0 : 1) : 0;
+      const scoreAway = isByeMatch ? (team2.teamId === 'BYE' ? 0 : 1) : 0;
 
       // Gamesシートに試合を追加
       await gamesSheet.addRow({
@@ -1405,10 +1440,10 @@ export async function generateTournamentBracket(
         scheduled_date: '',
         scheduled_time: '',
         field: '',
-        status: 'scheduled',
-        score_home: 0,
-        score_away: 0,
-        recorder: '',
+        status,
+        score_home: scoreHome,
+        score_away: scoreAway,
+        recorder: isByeMatch ? 'AUTO' : '',
       });
 
       brackets.push({
@@ -1418,6 +1453,9 @@ export async function generateTournamentBracket(
         team1Id: team1.teamId,
         team2Id: team2.teamId,
         gameId,
+        winnerId: isByeMatch ? (team1.teamId === 'BYE' ? team2.teamId : team1.teamId) : undefined,
+        score1: scoreHome,
+        score2: scoreAway,
       });
     }
 
@@ -1521,9 +1559,74 @@ export async function advanceTournamentWinner(
       return;
     }
 
-    // 次のラウンドの試合を探して勝者を設定
-    // この部分は実際のトーナメント構造に応じてカスタマイズが必要
-    console.log(`Winner ${winnerId} advances from ${currentRound} to ${nextRound}`);
+    // 現在のラウンドの試合を取得して番号を計算
+    const currentRoundGames = rows
+      .filter(row => row.get('tournament_id') === tournamentId && row.get('round') === currentRound)
+      .sort((a, b) => a.get('game_id').localeCompare(b.get('game_id')));
+
+    const matchIndex = currentRoundGames.findIndex(row => row.get('game_id') === completedGameId);
+    if (matchIndex === -1) {
+      throw new Error('Could not find match index');
+    }
+
+    // 次のラウンドの試合番号を計算（0-indexed）
+    const nextMatchIndex = Math.floor(matchIndex / 2);
+    const isHomeTeam = matchIndex % 2 === 0;
+
+    // 次のラウンドの試合を検索
+    const nextRoundGames = rows.filter(
+      row => row.get('tournament_id') === tournamentId && row.get('round') === nextRound
+    );
+
+    let nextGame;
+    if (nextMatchIndex < nextRoundGames.length) {
+      // 既存の試合を更新
+      nextGame = nextRoundGames.sort((a, b) => a.get('game_id').localeCompare(b.get('game_id')))[nextMatchIndex];
+    } else {
+      // 次のラウンドの試合がまだ存在しない場合は作成
+      const gameIds = rows
+        .map(row => {
+          const id = row.get('game_id');
+          if (id && id.startsWith('GAME')) {
+            return parseInt(id.substring(4));
+          }
+          return 0;
+        })
+        .filter(id => !isNaN(id));
+
+      const maxGameId = gameIds.length > 0 ? Math.max(...gameIds) : 0;
+      const newGameId = `GAME${String(maxGameId + 1).padStart(3, '0')}`;
+
+      // 新しい試合を作成
+      await gamesSheet.addRow({
+        game_id: newGameId,
+        tournament_id: tournamentId,
+        game_type: 'tournament',
+        round: nextRound,
+        team_home_id: isHomeTeam ? winnerId : 'TBD',
+        team_away_id: isHomeTeam ? 'TBD' : winnerId,
+        scheduled_date: '',
+        scheduled_time: '',
+        field: '',
+        status: 'scheduled',
+        score_home: 0,
+        score_away: 0,
+        recorder: '',
+      });
+
+      console.log(`Created new game ${newGameId} in ${nextRound} with winner ${winnerId}`);
+      return;
+    }
+
+    // 既存の試合を更新
+    if (isHomeTeam) {
+      nextGame.set('team_home_id', winnerId);
+    } else {
+      nextGame.set('team_away_id', winnerId);
+    }
+
+    await nextGame.save();
+    console.log(`Advanced winner ${winnerId} to ${nextRound} game ${nextGame.get('game_id')}`);
 
   } catch (error) {
     console.error('Error advancing tournament winner:', error);
