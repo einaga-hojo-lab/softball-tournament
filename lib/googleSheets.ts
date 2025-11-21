@@ -642,6 +642,129 @@ export async function getPlayers(tournamentId?: string): Promise<Player[]> {
   }
 }
 
+// 選手を作成
+export async function createPlayer(
+  tournamentId: string,
+  playerData: {
+    teamId: string;
+    playerName: string;
+    uniformNumber?: number;
+    position?: string;
+    participantId?: string;
+  }
+): Promise<Player> {
+  try {
+    const doc = await getSpreadsheet();
+    const sheet = doc.sheetsByTitle['Players'];
+    if (!sheet) {
+      throw new Error('Players sheet not found');
+    }
+
+    // 新しい選手IDを生成
+    const rows = await sheet.getRows();
+    const playerIds = rows
+      .filter(row => row.get('tournament_id') === tournamentId)
+      .map(row => {
+        const id = row.get('player_id');
+        const match = id?.match(/PLAYER(\d+)$/);
+        return match ? parseInt(match[1]) : 0;
+      });
+    const maxId = playerIds.length > 0 ? Math.max(...playerIds) : 0;
+    const newPlayerId = `PLAYER${String(maxId + 1).padStart(3, '0')}`;
+
+    // 新しい行を追加
+    await sheet.addRow({
+      tournament_id: tournamentId,
+      player_id: newPlayerId,
+      team_id: playerData.teamId,
+      player_name: playerData.playerName,
+      uniform_number: playerData.uniformNumber?.toString() || '0',
+      position: playerData.position || '',
+      participant_id: playerData.participantId || '',
+    });
+
+    return {
+      playerId: newPlayerId,
+      tournamentId,
+      teamId: playerData.teamId,
+      playerName: playerData.playerName,
+      uniformNumber: playerData.uniformNumber || 0,
+      position: playerData.position || '',
+      participantId: playerData.participantId,
+    };
+  } catch (error) {
+    console.error('Error creating player:', error);
+    throw error;
+  }
+}
+
+// 選手を更新
+export async function updatePlayer(
+  tournamentId: string,
+  playerId: string,
+  playerData: {
+    teamId?: string;
+    playerName?: string;
+    uniformNumber?: number;
+    position?: string;
+    participantId?: string;
+  }
+): Promise<void> {
+  try {
+    const doc = await getSpreadsheet();
+    const sheet = doc.sheetsByTitle['Players'];
+    if (!sheet) {
+      throw new Error('Players sheet not found');
+    }
+
+    const rows = await sheet.getRows();
+    const playerRow = rows.find(
+      row => row.get('tournament_id') === tournamentId && row.get('player_id') === playerId
+    );
+
+    if (!playerRow) {
+      throw new Error('Player not found');
+    }
+
+    // 更新
+    if (playerData.teamId !== undefined) playerRow.set('team_id', playerData.teamId);
+    if (playerData.playerName !== undefined) playerRow.set('player_name', playerData.playerName);
+    if (playerData.uniformNumber !== undefined) playerRow.set('uniform_number', playerData.uniformNumber.toString());
+    if (playerData.position !== undefined) playerRow.set('position', playerData.position);
+    if (playerData.participantId !== undefined) playerRow.set('participant_id', playerData.participantId);
+
+    await playerRow.save();
+  } catch (error) {
+    console.error('Error updating player:', error);
+    throw error;
+  }
+}
+
+// 選手を削除
+export async function deletePlayer(tournamentId: string, playerId: string): Promise<void> {
+  try {
+    const doc = await getSpreadsheet();
+    const sheet = doc.sheetsByTitle['Players'];
+    if (!sheet) {
+      throw new Error('Players sheet not found');
+    }
+
+    const rows = await sheet.getRows();
+    const playerRow = rows.find(
+      row => row.get('tournament_id') === tournamentId && row.get('player_id') === playerId
+    );
+
+    if (!playerRow) {
+      throw new Error('Player not found');
+    }
+
+    await playerRow.delete();
+  } catch (error) {
+    console.error('Error deleting player:', error);
+    throw error;
+  }
+}
+
 // リーグ順位表を取得
 export async function getLeagueStandings(tournamentId: string): Promise<LeagueStanding[]> {
   try {

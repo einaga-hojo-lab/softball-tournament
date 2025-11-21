@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Team, Game } from "@/lib/types";
+import { Team, Game, Player } from "@/lib/types";
 
 interface DashboardStats {
   tournament: any;
@@ -58,6 +58,17 @@ export default function TournamentDashboardPage() {
     recorder: "",
   });
 
+  // 選手管理関連のステート
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [showPlayerForm, setShowPlayerForm] = useState(false);
+  const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
+  const [playerFormData, setPlayerFormData] = useState({
+    teamId: "",
+    playerName: "",
+    uniformNumber: 0,
+    position: "",
+  });
+
   useEffect(() => {
     async function fetchDashboardData() {
       try {
@@ -73,6 +84,10 @@ export default function TournamentDashboardPage() {
         // 試合情報を取得
         const gamesRes = await fetch(`/api/games?tournamentId=${tournamentId}`);
         const games = await gamesRes.json();
+
+        // 選手情報を取得
+        const playersRes = await fetch(`/api/players?tournamentId=${tournamentId}`);
+        const players = await playersRes.json();
 
         // 個人成績を取得（参加者数のカウント用）
         const statsRes = await fetch(`/api/stats?tournamentId=${tournamentId}`);
@@ -93,6 +108,7 @@ export default function TournamentDashboardPage() {
         setStats(dashboardStats);
         setTeams(teams);
         setGames(games);
+        setPlayers(players);
         setLoading(false);
       } catch (err) {
         setError(err instanceof Error ? err.message : '不明なエラー');
@@ -331,6 +347,92 @@ export default function TournamentDashboardPage() {
       recorder: "",
     });
     setEditingGame(null);
+  }
+
+  // 選手管理関数
+  async function handleCreatePlayer(e: React.FormEvent) {
+    e.preventDefault();
+    try {
+      const res = await fetch('/api/admin/players', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tournamentId, ...playerFormData }),
+      });
+
+      if (!res.ok) throw new Error('選手の作成に失敗しました');
+
+      const newPlayer = await res.json();
+      setPlayers([...players, newPlayer]);
+      setShowPlayerForm(false);
+      resetPlayerForm();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '選手の作成に失敗しました');
+    }
+  }
+
+  async function handleUpdatePlayer(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingPlayer) return;
+
+    try {
+      const res = await fetch(`/api/admin/players/${editingPlayer.playerId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tournamentId, ...playerFormData }),
+      });
+
+      if (!res.ok) throw new Error('選手の更新に失敗しました');
+
+      setPlayers(players.map(p =>
+        p.playerId === editingPlayer.playerId
+          ? { ...p, ...playerFormData }
+          : p
+      ));
+      setEditingPlayer(null);
+      setShowPlayerForm(false);
+      resetPlayerForm();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '選手の更新に失敗しました');
+    }
+  }
+
+  async function handleDeletePlayer(playerId: string, playerName: string) {
+    if (!confirm(`本当に「${playerName}」を削除しますか？\n\nこの操作は取り消せません。`)) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/admin/players/${playerId}?tournamentId=${tournamentId}`, {
+        method: 'DELETE',
+      });
+
+      if (!res.ok) throw new Error('選手の削除に失敗しました');
+
+      setPlayers(players.filter(p => p.playerId !== playerId));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '選手の削除に失敗しました');
+    }
+  }
+
+  function openEditPlayerForm(player: Player) {
+    setEditingPlayer(player);
+    setPlayerFormData({
+      teamId: player.teamId,
+      playerName: player.playerName,
+      uniformNumber: player.uniformNumber,
+      position: player.position || "",
+    });
+    setShowPlayerForm(true);
+  }
+
+  function resetPlayerForm() {
+    setPlayerFormData({
+      teamId: "",
+      playerName: "",
+      uniformNumber: 0,
+      position: "",
+    });
+    setEditingPlayer(null);
   }
 
   if (loading) {
@@ -999,6 +1101,182 @@ export default function TournamentDashboardPage() {
                             </button>
                             <button
                               onClick={() => handleDeleteGame(game.gameId)}
+                              className="px-3 py-1 bg-red-500 text-white text-sm rounded hover:bg-red-600"
+                            >
+                              削除
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 選手管理セクション */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-2xl font-bold text-primary">選手管理</h2>
+            <button
+              onClick={() => {
+                resetPlayerForm();
+                setShowPlayerForm(!showPlayerForm);
+              }}
+              className="px-4 py-2 bg-accent text-white rounded-lg hover:bg-opacity-90 transition-colors"
+            >
+              {showPlayerForm ? 'キャンセル' : '+ 新規選手追加'}
+            </button>
+          </div>
+
+          {/* 選手追加/編集フォーム */}
+          {showPlayerForm && (
+            <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+              <h3 className="text-xl font-bold mb-4 text-primary">
+                {editingPlayer ? '選手編集' : '新規選手追加'}
+              </h3>
+              <form onSubmit={editingPlayer ? handleUpdatePlayer : handleCreatePlayer} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      チーム <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      required
+                      value={playerFormData.teamId}
+                      onChange={(e) => setPlayerFormData({ ...playerFormData, teamId: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                    >
+                      <option value="">選択してください</option>
+                      {teams.map(team => (
+                        <option key={team.teamId} value={team.teamId}>
+                          {team.teamName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      選手名 <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={playerFormData.playerName}
+                      onChange={(e) => setPlayerFormData({ ...playerFormData, playerName: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                      placeholder="例: 山田太郎"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      背番号
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="99"
+                      value={playerFormData.uniformNumber}
+                      onChange={(e) => setPlayerFormData({ ...playerFormData, uniformNumber: parseInt(e.target.value) || 0 })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      ポジション
+                    </label>
+                    <input
+                      type="text"
+                      value={playerFormData.position}
+                      onChange={(e) => setPlayerFormData({ ...playerFormData, position: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                      placeholder="例: 投手、外野手"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-4 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPlayerForm(false);
+                      resetPlayerForm();
+                    }}
+                    className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                  >
+                    キャンセル
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-6 py-2 bg-accent text-white rounded-lg hover:bg-opacity-90"
+                  >
+                    {editingPlayer ? '更新' : '作成'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* 選手一覧 */}
+          <div className="bg-white rounded-lg shadow-md overflow-hidden">
+            <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
+              <h3 className="text-lg font-bold text-primary">登録選手一覧 ({players.length}人)</h3>
+            </div>
+
+            {players.length === 0 ? (
+              <div className="p-8 text-center text-gray-600">
+                <p className="mb-4">選手が登録されていません</p>
+                <button
+                  onClick={() => setShowPlayerForm(true)}
+                  className="px-6 py-2 bg-accent text-white rounded-lg hover:bg-opacity-90"
+                >
+                  最初の選手を作成
+                </button>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-100">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">選手名</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">チーム</th>
+                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700">背番号</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">ポジション</th>
+                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {players.sort((a, b) => {
+                      const teamCompare = (teams.find(t => t.teamId === a.teamId)?.teamName || '').localeCompare(teams.find(t => t.teamId === b.teamId)?.teamName || '');
+                      if (teamCompare !== 0) return teamCompare;
+                      return a.uniformNumber - b.uniformNumber;
+                    }).map((player) => (
+                      <tr key={player.playerId} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 font-medium">{player.playerName}</td>
+                        <td className="px-4 py-3 text-sm">
+                          {teams.find(t => t.teamId === player.teamId)?.teamName || player.teamId}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <span className="px-2 py-1 bg-primary text-white text-sm rounded font-bold">
+                            {player.uniformNumber}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-sm">{player.position || '-'}</td>
+                        <td className="px-4 py-3 text-center">
+                          <div className="flex justify-center gap-2">
+                            <button
+                              onClick={() => openEditPlayerForm(player)}
+                              className="px-3 py-1 bg-blue-500 text-white text-sm rounded hover:bg-blue-600"
+                            >
+                              編集
+                            </button>
+                            <button
+                              onClick={() => handleDeletePlayer(player.playerId, player.playerName)}
                               className="px-3 py-1 bg-red-500 text-white text-sm rounded hover:bg-red-600"
                             >
                               削除
